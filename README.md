@@ -10,6 +10,8 @@ This repository contains three supported methods:
 
 The refactor preserves the existing model adapters, training classes, losses, command-line arguments, and checkpoint contents. Numeric scenario identifiers remain available for compatibility: `--scenario 2` selects LGG and `--scenario 3` selects DE.
 
+Some internal symbols still use the legacy `Scenario1`/`S1` names. They are retained deliberately to avoid changing existing classes and adapter interfaces; the public inference entry point only exposes baseline, LGG, and DE.
+
 ## Repository layout
 
 ```text

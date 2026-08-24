@@ -1,3 +1,9 @@
+"""Shared inference protocol and runner.
+
+The legacy S1 names are retained to keep the existing adapter interface stable.
+Baseline, LGG, and Dual Encoding all use this thin dispatch layer.
+"""
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Protocol
@@ -48,4 +54,3 @@ class Scenario1:
             use_vision_hook=use_vision_hook,
         )
         return outs
-
