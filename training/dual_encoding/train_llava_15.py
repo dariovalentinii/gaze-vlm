@@ -48,54 +48,25 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from training.common import Batch, JsonlGazePromptOnly, resolve_prompt, set_tokenizer_padding
+from training.common import JsonlGazePromptOnly, set_tokenizer_padding
+from training.prompting import collate_fn
+from training.dual_encoding.common import (
+    _heatmap_to_rgb_pil,
+    heatmaps_to_rgb_pils,
+    forward_heatmap_encoder,
+    freeze_all_params,
+    clone_vision_tower,
+    restrict_vision_lora_to_last_k_layers,
+    distill_kl_loss,
+)
 from src.data.heatmaps import heatmap_to_patch_weights, GazeInjectorScenario3
 from src.data.prompts import PROMPTS_FT
 from src.models.utils import unwrap_to_llava
-
-# -----------------------
-# Dataset
-# -----------------------
-
-
-# -----------------------
-# Prompt formatting
-# -----------------------
-def has_chat_template(processor: Any) -> bool:
-    tok = getattr(processor, "tokenizer", None)
-    return bool(tok is not None and hasattr(tok, "apply_chat_template") and getattr(tok, "chat_template", None))
-
-
-
-
-
-
-def build_prompt_only_text(processor: Any, prompt_text: str) -> str:
-    tok = processor.tokenizer
-    if has_chat_template(processor):
-        user = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": prompt_text}]}]
-        return tok.apply_chat_template(user, tokenize=False, add_generation_prompt=True)
-    return f"USER: <image>\n{prompt_text}\nASSISTANT:"
 
 
 # -----------------------
 # Heatmap preprocessing
 # -----------------------
-def _heatmap_to_rgb_pil(hm: torch.Tensor) -> Image.Image:
-    if hm.ndim != 4 or hm.shape[0] != 1 or hm.shape[1] != 1:
-        raise ValueError(f"Expected heatmap [1,1,H,W], got {tuple(hm.shape)}")
-    hm_2d = hm[0, 0].float().cpu().numpy()
-    hm_2d = hm_2d - hm_2d.min()
-    if hm_2d.max() > 0:
-        hm_2d = hm_2d / hm_2d.max()
-    hm_uint8 = (hm_2d * 255.0).astype(np.uint8)
-    return Image.fromarray(hm_uint8, mode="L").convert("RGB")
-
-
-def heatmaps_to_rgb_pils(heatmaps: List[torch.Tensor]) -> List[Image.Image]:
-    return [_heatmap_to_rgb_pil(hm) for hm in heatmaps]
-
-
 @torch.no_grad()
 def heatmaps_to_weights_for_attention(
     processor: Any,
@@ -127,103 +98,6 @@ def heatmaps_to_pixel_values_for_encoder(
     """Returns CLIP-normalized pixel_values [B,3,H',W'] for the heatmap encoder."""
     pix = processor.image_processor(images=heatmap_pils, return_tensors="pt")["pixel_values"]
     return pix.to(device)
-
-
-def forward_heatmap_encoder(
-    heatmap_encoder: nn.Module,
-    pixel_values: torch.Tensor,
-    output_hidden_states: bool = False,
-    return_dict: bool = True,
-) -> Any:
-    """
-    Forward helper for CLIP vision tower with/without PEFT.
-
-    Some PEFT wrappers for FEATURE_EXTRACTION can forward an `inputs_embeds`
-    kwarg that conflicts with CLIPVisionModel internals. If that happens,
-    fallback to calling the wrapped base_model directly (LoRA modules stay active).
-    """
-    kwargs = {
-        "pixel_values": pixel_values,
-        "output_hidden_states": output_hidden_states,
-        "return_dict": return_dict,
-    }
-
-    if isinstance(heatmap_encoder, PeftModel):
-        try:
-            return heatmap_encoder(**kwargs)
-        except (TypeError, KeyError) as e:
-            msg = str(e)
-            if "inputs_embeds" not in msg:
-                raise
-            if not hasattr(heatmap_encoder, "base_model"):
-                raise
-            return heatmap_encoder.base_model(**kwargs)
-
-    return heatmap_encoder(**kwargs)
-
-
-# -----------------------
-# Collate
-# -----------------------
-
-
-def collate_fn(batch: List[Dict[str, Any]], processor: Any, max_length: int) -> Batch:
-    images = [b["image"] for b in batch]
-    heatmaps = [b["heatmap"] for b in batch]
-
-    prompt_texts: List[str] = []
-    for b in batch:
-        prompt = resolve_prompt(b.get("prompt"), b.get("cor"))
-        prompt_texts.append(build_prompt_only_text(processor, prompt))
-
-    used_chat = has_chat_template(processor)
-    add_special_tokens = False if used_chat else True
-
-    model_inputs = processor(
-        text=prompt_texts,
-        images=images,
-        return_tensors="pt",
-        padding=True,
-        max_length=max_length,
-        add_special_tokens=add_special_tokens,
-    )
-
-    return Batch(inputs=model_inputs, heatmaps=heatmaps)
-
-
-# -----------------------
-# Utils
-# -----------------------
-def freeze_all_params(m: nn.Module) -> None:
-    for p in m.parameters():
-        p.requires_grad = False
-
-
-def clone_vision_tower(vision_tower: nn.Module) -> nn.Module:
-    """Create a new vision tower instance with identical weights."""
-    cls = vision_tower.__class__
-    new = cls(vision_tower.config)
-    new.load_state_dict(vision_tower.state_dict(), strict=True)
-    return new
-
-
-def restrict_vision_lora_to_last_k_layers(vision_peft: nn.Module, last_k: int, num_layers: int) -> None:
-    """Freeze LoRA params that belong to layers < num_layers-last_k."""
-    if last_k <= 0 or last_k >= num_layers:
-        return
-    cutoff = num_layers - last_k
-    pat = re.compile(r"vision_model\.encoder\.layers\.(\d+)\.")
-    for n, p in vision_peft.named_parameters():
-        if "lora_" not in n:
-            continue
-        m = pat.search(n)
-        if m is None:
-            # keep non-layer LoRA params trainable
-            continue
-        li = int(m.group(1))
-        if li < cutoff:
-            p.requires_grad = False
-
 
 # -----------------------
 # Attention alignment (copied from scenario-2 script)
@@ -333,21 +207,6 @@ def attention_alignment_loss(
     raise ValueError(f"Unknown loss_type='{loss_type}'. Choose from: kl, mse, ce")
 
 
-def distill_kl_loss(
-    logits_s: torch.Tensor,
-    logits_t: torch.Tensor,
-    attention_mask: Optional[torch.Tensor],
-    temperature: float = 2.0,
-) -> torch.Tensor:
-    T = float(temperature)
-    log_p_s = F.log_softmax(logits_s / T, dim=-1)
-    p_t = F.softmax(logits_t / T, dim=-1)
-    kl = F.kl_div(log_p_s, p_t, reduction="none").sum(dim=-1)  # [B,S]
-    if attention_mask is None:
-        return kl.mean() * (T * T)
-    m = attention_mask.to(dtype=kl.dtype)
-    denom = m.sum().clamp_min(1.0)
-    return (kl * m).sum() / denom * (T * T)
 
 
 # -----------------------

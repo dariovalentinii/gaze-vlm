@@ -22,8 +22,12 @@ Some internal symbols still use the legacy `Scenario1`/`S1` names. They are reta
 │   ├── models/                  # existing LLaVA adapters
 │   └── scenarios/               # shared inference runner
 ├── training/
-│   ├── lgg/                     # Learnable Gaze Gating trainers
-│   └── dual_encoding/           # Dual Encoding trainers
+│   ├── lgg/                     # LGG trainers and shared LGG helpers
+│   ├── dual_encoding/           # DE trainers and shared DE helpers
+│   ├── attention_alignment.py   # shared LLaVA-NeXT attention logic
+│   ├── modeling.py              # shared model/adapter selection
+│   ├── prompting.py             # LLaVA 1.5/NeXT prompt formatting
+│   └── onevision_prompting.py   # OneVision prompt formatting
 ├── evaluation/                  # CogBench evaluation pipeline
 └── scripts/                     # convenience entry points
 ```

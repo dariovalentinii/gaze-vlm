@@ -51,132 +51,21 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from training.common import Batch, JsonlGazePromptOnly, resolve_prompt, set_tokenizer_padding
+from training.common import JsonlGazePromptOnly, set_tokenizer_padding
+from training.onevision_prompting import collate_fn
+from training.modeling import select_model_and_adapter_classes
+from training.lgg.common import (
+    build_per_sample_gaze_targets,
+    distill_kl_loss,
+    freeze_all_params,
+    preprocess_heatmaps_to_weights,
+)
 from src.data.heatmaps import apply_patch_weighting, GazeInjector, pack_gaze_probs_like_llava_next
 from src.data.prompts import PROMPTS_FT
 from src.models.utils import unwrap_to_llava
 from src.models.llava_15 import LlavaHFAdapter
 from src.models.llava_next import LlavaNextHFAdapter
 from src.models.llava_ov import LlavaOnevisionHFAdapter
-
-
-# -----------------------
-# Dataset
-# -----------------------
-
-
-# -----------------------
-# Prompt formatting
-# -----------------------
-def has_chat_template(processor: Any) -> bool:
-    has_proc_template = hasattr(processor, "apply_chat_template") and getattr(processor, "chat_template", None)
-    tok = getattr(processor, "tokenizer", None)
-    has_tok_template = bool(
-        tok is not None and hasattr(tok, "apply_chat_template") and getattr(tok, "chat_template", None)
-    )
-    return bool(has_proc_template or has_tok_template)
-
-
-
-
-
-
-def build_prompt_only_text(processor: Any, prompt_text: str) -> str:
-    has_proc_template = hasattr(processor, "apply_chat_template") and getattr(processor, "chat_template", None)
-    has_tok_template = (
-        hasattr(processor, "tokenizer")
-        and hasattr(processor.tokenizer, "apply_chat_template")
-        and getattr(processor.tokenizer, "chat_template", None)
-    )
-
-    if has_proc_template:
-        user = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": prompt_text}]}]
-        return processor.apply_chat_template(user, tokenize=False, add_generation_prompt=True)
-
-    if has_tok_template:
-        # Some tokenizer chat templates (e.g. Qwen) expect content as a plain string.
-        user = [{"role": "user", "content": f"<image>\n{prompt_text}"}]
-        return processor.tokenizer.apply_chat_template(user, tokenize=False, add_generation_prompt=True)
-
-    return f"user: <image>\n{prompt_text}\nassistant\n"
-
-
-# -----------------------
-# Heatmap -> patch weights (same pipeline as images)
-# -----------------------
-def select_model_and_adapter_classes(model_name: str) -> Tuple[Any, Any]:
-    m = model_name.lower()
-    if "onevision" in m or "ov-chat" in m:
-        return LlavaOnevisionForConditionalGeneration, LlavaOnevisionHFAdapter
-    if "v1.6" in m or "next" in m:
-        return LlavaNextForConditionalGeneration, LlavaNextHFAdapter
-    return LlavaForConditionalGeneration, LlavaHFAdapter
-
-
-@torch.no_grad()
-def preprocess_heatmaps_to_weights(
-    adapter_cls: Any,
-    processor: Any,
-    vision_patch_size: int,
-    heatmaps: List[torch.Tensor],
-    device: torch.device,
-) -> torch.Tensor:
-    """Reuse adapter-specific _preprocess_heatmaps_to_weights without constructing full adapter/model."""
-
-    class _HeatmapPreprocessProxy:
-        def __init__(self, processor: Any, vision_patch_size: int, device: torch.device):
-            self.processor = processor
-            self.vision_patch_size = vision_patch_size
-            self.device = device
-
-    proxy = _HeatmapPreprocessProxy(
-        processor=processor,
-        vision_patch_size=vision_patch_size,
-        device=device,
-    )
-    if not hasattr(adapter_cls, "_preprocess_heatmaps_to_weights"):
-        raise RuntimeError(f"Adapter {adapter_cls.__name__} does not define _preprocess_heatmaps_to_weights")
-    return adapter_cls._preprocess_heatmaps_to_weights(proxy, heatmaps)
-
-
-
-# -----------------------
-# Collate
-# -----------------------
-
-
-def collate_fn(batch: List[Dict[str, Any]], processor: Any, max_length: int) -> Batch:
-    images = [b["image"] for b in batch]
-    heatmaps = [b["heatmap"] for b in batch]
-
-    prompt_texts: List[str] = []
-    for b in batch:
-        prompt = resolve_prompt(b.get("prompt"), b.get("cor"))
-        prompt_texts.append(build_prompt_only_text(processor, prompt))
-
-    # For chat-template tokenizers, processor usually expects add_special_tokens=False.
-    used_chat = has_chat_template(processor)
-    add_special_tokens = False if used_chat else True
-
-    model_inputs = processor(
-        text=prompt_texts,
-        images=images,
-        return_tensors="pt",
-        padding=True,
-        max_length=max_length,
-        add_special_tokens=add_special_tokens,
-    )
-
-    # No labels: we optimize only attention-alignment loss.
-    return Batch(inputs=model_inputs, heatmaps=heatmaps)
-
-
-# -----------------------
-# PEFT / model utils
-# -----------------------
-def freeze_all_params(m: torch.nn.Module) -> None:
-    for p in m.parameters():
-        p.requires_grad = False
 
 
 # -----------------------
@@ -662,55 +551,8 @@ def install_lastk_attn_slice_capture(
     return handles
 
 
-def build_per_sample_gaze_targets(
-    weights: torch.Tensor,
-    batch_size: int,
-    eps: float = 1e-8,
-) -> torch.Tensor:
-    """Build per-sample gaze targets for attention alignment.
-
-    Supports:
-      - weights [B, N] (non-AnyRes or already per-sample)
-      - weights [B*T, N] (AnyRes tile-level), flattened to [B, T*N]
-    """
-    if weights.ndim != 2:
-        raise RuntimeError(f"Expected weights to be rank-2 [*,N], got shape={tuple(weights.shape)}")
-
-    if weights.shape[0] == batch_size:
-        g = weights.clamp_min(0)
-        return g / (g.sum(dim=1, keepdim=True) + eps)
-
-    if weights.shape[0] > batch_size and (weights.shape[0] % batch_size == 0):
-        tiles_per_sample = weights.shape[0] // batch_size
-        n_patch = weights.shape[1]
-        g = weights.view(batch_size, tiles_per_sample, n_patch)
-        g = g.reshape(batch_size, tiles_per_sample * n_patch).clamp_min(0)
-        return g / (g.sum(dim=1, keepdim=True) + eps)
-
-    raise RuntimeError(
-        "Could not map gaze weights to per-sample targets for attention alignment. "
-        f"weights.shape={tuple(weights.shape)}, batch_size={batch_size}. "
-        "Expected [B,N] or [B*T,N] with integer T."
-    )
 
 
-def distill_kl_loss(
-    logits_s: torch.Tensor,        # [B,S,V]
-    logits_t: torch.Tensor,        # [B,S,V]
-    attention_mask: Optional[torch.Tensor],
-    temperature: float = 2.0,
-    eps: float = 1e-8,
-) -> torch.Tensor:
-    """KL( softmax(t/T) || softmax(s/T) ) averaged over non-pad tokens. Multiplied by T^2 (standard)."""
-    T = float(temperature)
-    log_p_s = F.log_softmax(logits_s / T, dim=-1)
-    p_t = F.softmax(logits_t / T, dim=-1)
-    kl = F.kl_div(log_p_s, p_t, reduction="none").sum(dim=-1)  # [B,S]
-    if attention_mask is None:
-        return (kl.mean()) * (T * T)
-    m = attention_mask.to(dtype=kl.dtype)
-    denom = m.sum().clamp_min(1.0)
-    return (kl * m).sum() / denom * (T * T)
 
 
 # -----------------------
