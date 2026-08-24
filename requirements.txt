@@ -1,0 +1,24 @@
+# Core ML frameworks
+torch>=2.0.0
+torchvision>=0.15.0
+transformers>=4.39.0
+accelerate>=0.24.0
+peft
+
+# Image processing
+Pillow>=10.0.0
+
+# Numerical computing
+numpy>=1.24.0
+
+# Utilities
+tqdm>=4.66.0
+openai
+google-genai
+
+# NLP and evaluation (for CogBench)
+spacy
+sentence-transformers
+scikit-learn
+matplotlib
+

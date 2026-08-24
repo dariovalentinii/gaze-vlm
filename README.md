@@ -1,1 +1,170 @@
-# gaze-vlm
+# Gaze-VLM
+
+Gaze-conditioned inference and fine-tuning for CogBench with LLaVA-family vision-language models.
+
+This repository contains three supported methods:
+
+- **Baseline**: standard inference without gaze injection.
+- **Learnable Gaze Gating (LGG)**: the former Scenario 2. A learned affine-sigmoid gate weights visual patch features from gaze heatmaps.
+- **Dual Encoding (DE)**: the former Scenario 3. A separate vision encoder embeds the heatmap before gaze gating.
+
+The refactor preserves the existing model adapters, training classes, losses, command-line arguments, and checkpoint contents. Numeric scenario identifiers remain available for compatibility: `--scenario 2` selects LGG and `--scenario 3` selects DE.
+
+## Repository layout
+
+```text
+.
+├── run_batch_inference.py       # baseline, LGG, and DE inference
+├── src/
+│   ├── data/                    # prompts and heatmap processing
+│   ├── models/                  # existing LLaVA adapters
+│   └── scenarios/               # shared inference runner
+├── training/
+│   ├── lgg/                     # Learnable Gaze Gating trainers
+│   └── dual_encoding/           # Dual Encoding trainers
+├── evaluation/                  # CogBench evaluation pipeline
+└── scripts/                     # convenience entry points
+```
+
+Datasets, experiment outputs, logs, adapters, and checkpoints are intentionally not versioned.
+
+## Installation
+
+Python 3.10 or newer is recommended.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m spacy download en_core_web_sm
+```
+
+The evaluation pipeline uses Gemini for cognition scoring. Provide the key through the environment rather than source code:
+
+```bash
+export GEMINI_API_KEY="..."
+```
+
+The project root is detected automatically. `GAZE_VLM_ROOT` can override it when data is stored relative to another root.
+
+## Data
+
+Inference expects CogBench images and NumPy heatmaps. The default layout is:
+
+```text
+data/
+├── cogbench_v1-1/
+│   ├── images/
+│   └── cogbench_v1_description.json
+└── heatmaps/
+    └── avg/
+```
+
+Training consumes JSONL records with `image_path`, `heatmap_path`, and either `prompt` or `cor`:
+
+```json
+{"image_path":"/path/image.jpg","heatmap_path":"/path/heatmap.npy","cor":"0_E"}
+```
+
+Multiple training or validation files can be passed as comma-separated paths.
+
+## Inference
+
+Baseline:
+
+```bash
+python run_batch_inference.py \
+  --model llava-hf/llava-1.5-7b-hf \
+  --images_dir /path/to/images \
+  --heatmaps_dir /path/to/heatmaps \
+  --no_gaze
+```
+
+For parity with the original implementation, baseline data loading still expects heatmap files even though the vision hook is disabled.
+
+LGG:
+
+```bash
+python run_batch_inference.py \
+  --model llava-hf/llava-1.5-7b-hf \
+  --images_dir /path/to/images \
+  --heatmaps_dir /path/to/heatmaps \
+  --scenario 2 \
+  --lora_dir training/lgg/llava-1.5-7b-hf/my_run
+```
+
+Dual Encoding:
+
+```bash
+python run_batch_inference.py \
+  --model llava-hf/llava-1.5-7b-hf \
+  --images_dir /path/to/images \
+  --heatmaps_dir /path/to/heatmaps \
+  --scenario 3 \
+  --lora_dir training/dual_encoding/llava-1.5-7b-hf/my_run
+```
+
+Checkpoints stored in the previous `fine_tune/scenario2/...` and `fine_tune/scenario3/...` layouts remain accepted.
+
+Outputs are written below `results/baseline`, `results/lgg`, or `results/dual_encoding`. Each run first writes `full_<prompt_version>.jsonl` and then consolidates it into `consolidated_<prompt_version>.jsonl`.
+
+## Training
+
+Choose the trainer that matches the method and model family:
+
+| Method | Model family | Script |
+| --- | --- | --- |
+| LGG | LLaVA 1.5 7B | `training/lgg/train_llava_15_7b.py` |
+| LGG | LLaVA 1.5 13B | `training/lgg/train_llava_15_13b.py` |
+| LGG | LLaVA-NeXT 7B/13B | `training/lgg/train_llava_next.py` |
+| LGG | LLaVA-NeXT hook variant | `training/lgg/train_llava_next_with_hooks.py` |
+| LGG | LLaVA-OneVision | `training/lgg/train_llava_onevision.py` |
+| DE | LLaVA 1.5 7B/13B | `training/dual_encoding/train_llava_15.py` |
+| DE | LLaVA-NeXT 7B | `training/dual_encoding/train_llava_next_7b.py` |
+| DE | LLaVA-NeXT 13B | `training/dual_encoding/train_llava_next_13b.py` |
+| DE | LLaVA-OneVision | `training/dual_encoding/train_llava_onevision.py` |
+
+Example LGG training command:
+
+```bash
+python training/lgg/train_llava_15_7b.py \
+  --model llava-hf/llava-1.5-7b-hf \
+  --train_jsonl /path/to/train.jsonl \
+  --val_jsonl /path/to/val.jsonl \
+  --output_dir_name my_run \
+  --train_projector_lora \
+  --batch_size 1 \
+  --grad_accum 16 \
+  --epochs 1
+```
+
+Example Dual Encoding training command:
+
+```bash
+python training/dual_encoding/train_llava_15.py \
+  --model llava-hf/llava-1.5-7b-hf \
+  --train_jsonl /path/to/train.jsonl \
+  --val_jsonl /path/to/val.jsonl \
+  --output_dir_name my_run \
+  --train_projector_lora \
+  --train_heatmap_encoder_lora \
+  --batch_size 1 \
+  --grad_accum 16 \
+  --epochs 1
+```
+
+Training artifacts are stored below the selected method and model, for example `training/lgg/llava-1.5-7b-hf/my_run`.
+
+## Evaluation
+
+```bash
+python evaluation/run_all_eval.py \
+  --model_output_file_path results/lgg/llava-1.5-7b-hf/my_run/consolidated_v2.jsonl \
+  --cogbench_description_file_path /path/to/cogbench_v1_description.json
+```
+
+## Current scope
+
+Cross-validation, Scenario 1 gaze weighting, and Scenario 4 experiments are intentionally outside this refactor. They remain available only in the private source repository while baseline, LGG, and DE are validated here.
+
+No license has been selected yet. Add one before making the repository public.

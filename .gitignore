@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+
+# Datasets, generated outputs, and experiment logs
+/data/
+results/
+outputs/
+*.jsonl
+*.log
+*.out
+
+# Checkpoints and model artifacts
+*.bin
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+training/lgg/*/
+training/dual_encoding/*/
+
+# Notebooks
+.ipynb_checkpoints/
