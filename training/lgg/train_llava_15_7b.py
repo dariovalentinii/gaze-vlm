@@ -66,6 +66,10 @@ if str(_PROJECT_ROOT) not in sys.path:
 from training.common import JsonlGazePromptOnly, set_tokenizer_padding
 from training.prompting import collate_fn
 from training.modeling import select_model_and_adapter_classes
+from training.lgg.llava15_attention import (
+    _find_longest_run_positions,
+    infer_image_token_positions_per_sample,
+)
 from training.lgg.common import (
     build_per_sample_gaze_targets,
     distill_kl_loss,
@@ -84,87 +88,8 @@ from src.models.llava_ov import LlavaOnevisionHFAdapter
 # Attention alignment
 # -----------------------
 
-def _find_longest_run_positions(mask_1d: torch.Tensor) -> List[int]:
-    """mask_1d: [S] bool; returns positions of the longest contiguous True run."""
-    idx = mask_1d.nonzero(as_tuple=False).view(-1).tolist()
-    if not idx:
-        return []
-    best_run: List[int] = []
-    cur: List[int] = [idx[0]]
-    for i in idx[1:]:
-        if i == cur[-1] + 1:
-            cur.append(i)
-        else:
-            if len(cur) > len(best_run):
-                best_run = cur
-            cur = [i]
-    if len(cur) > len(best_run):
-        best_run = cur
-    return best_run
 
 
-def infer_image_token_positions_per_sample(
-    input_ids_b: torch.Tensor,
-    attn_mask_b: torch.Tensor,
-    attn_seq_len: int,
-    image_token_id: int,
-    num_image_tokens: int,
-) -> Tuple[List[int], int]:
-    """Infer positions of image tokens (length=num_image_tokens) in the *attention* sequence.
-
-    Returns (img_positions, q_idx) where q_idx is the last valid token index (for the query).
-
-        Handles common multimodal tokenization patterns:
-            A) Processor already expanded <image> into image tokens in input_ids.
-            B) Processor keeps one-or-more contiguous <image> placeholders; model expands internally.
-    """
-
-    # Only consider valid (non-pad) part of the processor sequence.
-    valid_len_in = int(attn_mask_b.sum().item())
-    input_ids_valid = input_ids_b[:valid_len_in]
-
-    img_positions_in = (input_ids_valid == image_token_id).nonzero(as_tuple=False).view(-1).tolist()
-
-    # A) Already expanded in input_ids: use positions directly.
-    if len(img_positions_in) == num_image_tokens:
-        q_idx = min(valid_len_in, attn_seq_len) - 1
-        return img_positions_in, q_idx
-
-    # No image placeholders/tokens found.
-    if len(img_positions_in) == 0:
-        raise RuntimeError(
-            "Could not infer image token positions: no image tokens/placeholders found in valid input_ids. "
-            f"valid_len={valid_len_in}, image_token_id={image_token_id}."
-        )
-
-    # B) Placeholder expansion path: we support contiguous placeholder runs (length P >= 1)
-    # that expand internally to num_image_tokens in the attention sequence.
-    run = _find_longest_run_positions(input_ids_valid == image_token_id)
-    if len(run) != len(img_positions_in):
-        raise RuntimeError(
-            "Could not infer image token positions with non-contiguous image placeholders. "
-            f"Found {len(img_positions_in)} placeholders but longest contiguous run is {len(run)}. "
-            "This function currently expects a single contiguous image-placeholder span per sample."
-        )
-
-    placeholder_count = len(run)
-    if placeholder_count > num_image_tokens:
-        raise RuntimeError(
-            "Could not infer image token positions: placeholder count exceeds expected image-token count. "
-            f"placeholders={placeholder_count}, expected_tokens={num_image_tokens}."
-        )
-
-    placeholder_pos0 = run[0]
-    valid_len_out = valid_len_in - placeholder_count + num_image_tokens
-    q_idx = valid_len_out - 1
-    img_positions = list(range(placeholder_pos0, placeholder_pos0 + num_image_tokens))
-
-    if valid_len_out > attn_seq_len:
-        raise RuntimeError(
-            f"Expanded valid len {valid_len_out} exceeds attention seq len {attn_seq_len}. "
-            "This likely means model/processor tokenization differs from assumptions."
-        )
-    return img_positions, q_idx
 
 
 def attention_alignment_loss(

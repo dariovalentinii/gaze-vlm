@@ -54,6 +54,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from training.common import JsonlGazePromptOnly, set_tokenizer_padding
 from training.onevision_prompting import collate_fn
 from training.modeling import select_model_and_adapter_classes
+from training.attention_utils import _find_longest_run_positions
 from training.lgg.common import (
     build_per_sample_gaze_targets,
     distill_kl_loss,
@@ -72,23 +73,6 @@ from src.models.llava_ov import LlavaOnevisionHFAdapter
 # Attention alignment
 # -----------------------
 
-def _find_longest_run_positions(mask_1d: torch.Tensor) -> List[int]:
-    """mask_1d: [S] bool; returns positions of the longest contiguous True run."""
-    idx = mask_1d.nonzero(as_tuple=False).view(-1).tolist()
-    if not idx:
-        return []
-    best_run: List[int] = []
-    cur: List[int] = [idx[0]]
-    for i in idx[1:]:
-        if i == cur[-1] + 1:
-            cur.append(i)
-        else:
-            if len(cur) > len(best_run):
-                best_run = cur
-            cur = [i]
-    if len(cur) > len(best_run):
-        best_run = cur
-    return best_run
 
 
 def infer_image_token_positions_per_sample(
