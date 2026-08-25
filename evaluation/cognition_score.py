@@ -53,7 +53,7 @@ def assert_no_null_scores(model_eval_result_list):
         raise ValueError("Null/None scores detected in evaluation file. Fix/rerun evaluation.")
 
 
-def cognition_score(model_eval_result_list, scores_file=None, model_name=None, model_scenario=None, prompt_version=None):
+def cognition_score(model_eval_result_list, scores_file=None, model_name=None, model_method=None, prompt_version=None):
 
     assert_no_null_scores(model_eval_result_list)
 
@@ -88,26 +88,26 @@ def cognition_score(model_eval_result_list, scores_file=None, model_name=None, m
     overall_score = sum([sum(reasoning_scores_dict[reasoning_type]) for reasoning_type in reasoning_types])/sum([len(reasoning_scores_dict[reasoning_type]) for reasoning_type in reasoning_types])
     print("Overall: ", '%.3f' % overall_score)
     
-    # Save to ROOT/results/{model_scenario}/{model_name}/scores_{prompt_version}.json
+    # Save to ROOT/results/{model_method}/{model_name}/scores_{prompt_version}.json
     if model_name:
         if scores_file is not None:
             scores_file = Path(scores_file)
             results_dir = scores_file.parent
         else:
             model_dir_name = model_name.split("/")[-1] if "/" in model_name else model_name
-            if model_scenario:
-                if model_scenario in [0, "0"]:
-                    scenario_dir_name = "baseline"
-                elif model_scenario in [2, "2"]:
-                    scenario_dir_name = "lgg"
-                elif model_scenario in [3, "3"]:
-                    scenario_dir_name = "dual_encoding"
+            if model_method:
+                if model_method in [0, "0"]:
+                    method_dir_name = "baseline"
+                elif model_method in [2, "2"]:
+                    method_dir_name = "lgg"
+                elif model_method in [3, "3"]:
+                    method_dir_name = "dual_encoding"
                 else:
-                    scenario_dir_name = model_scenario
+                    method_dir_name = model_method
             else:
-                scenario_dir_name = "unknown_scenario"
+                method_dir_name = "unknown_method"
 
-            results_dir = Path(ROOT) / "results" / scenario_dir_name / model_dir_name
+            results_dir = Path(ROOT) / "results" / method_dir_name / model_dir_name
             results_dir.mkdir(parents=True, exist_ok=True)
             if prompt_version:
                 scores_file = results_dir / f"scores_{prompt_version}.json"
@@ -123,13 +123,13 @@ def cognition_score(model_eval_result_list, scores_file=None, model_name=None, m
             print(f"Warning: model name in scores file ({scores_data['model']}) does not match current model name ({model_name}). Overwriting with current model name. Exiting without saving scores.")
             return  # Do not save scores if model name doesn't match
 
-        if model_scenario is None or "scenario" not in scores_data:
-            print(f"Warning: scenario information is missing. Scores will be saved without scenario info.")
-            scores_data["scenario"] = "unknown"
+        if model_method is None or "method" not in scores_data:
+            print(f"Warning: method information is missing. Scores will be saved without method info.")
+            scores_data["method"] = "unknown"
              
-        if scores_data['scenario'] != model_scenario:
-            print(f"Warning: scenario in scores file ({scores_data['scenario']}) does not match current scenario ({model_scenario}). Overwriting with current scenario. Exiting without saving scores.")
-            return  # Do not save scores if scenario doesn't match
+        if scores_data['method'] != model_method:
+            print(f"Warning: method in scores file ({scores_data['method']}) does not match current method ({model_method}). Overwriting with current method. Exiting without saving scores.")
+            return  # Do not save scores if method doesn't match
         
         if "prompt_version" in scores_data and scores_data["prompt_version"] != prompt_version:
             print(f"Warning: prompt version in scores file ({scores_data['prompt_version']}) does not match current prompt version ({prompt_version}). Overwriting with current prompt version. Exiting without saving scores.")
@@ -157,14 +157,14 @@ def main(file_path, scores_file=None):
     
     # Extract model info from first row
     model_name = None
-    model_scenario = None
+    model_method = None
     prompt_version = None
     if model_eval_result_list and 'model' in model_eval_result_list[0]:
         model_name = model_eval_result_list[0].get('model')
-        model_scenario = model_eval_result_list[0].get('scenario')
+        model_method = model_eval_result_list[0].get('method')
         prompt_version = model_eval_result_list[0].get('prompt_version')
     
-    cognition_score(model_eval_result_list, scores_file=scores_file, model_name=model_name, model_scenario=model_scenario, prompt_version=prompt_version)
+    cognition_score(model_eval_result_list, scores_file=scores_file, model_name=model_name, model_method=model_method, prompt_version=prompt_version)
 
 
 if __name__ == '__main__':

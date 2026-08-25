@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""train_s2_llava15_attn_align.py
+"""Learnable Gaze Gating training with attention alignment.
 
-Scenario 2 (LLaVA-1.5): learn *how* to inject gaze and align model attention to human gaze,
+Learn how to inject gaze and align model attention to human gaze,
 without supervising on the ground-truth text targets.
 
-Key changes vs. train_s2_llava15.py:
+Implementation:
   1) Gaze injection is learnable via a tiny gating module (default: affine + sigmoid).
   2) Training loss is an attention alignment loss (default: KL) between
      - model attention mass over image patch tokens

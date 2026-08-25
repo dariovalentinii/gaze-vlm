@@ -2,8 +2,8 @@
 """
 Run baseline, LGG, or Dual Encoding inference and then evaluate it.
 
-- Calls run_batch_inference (your script) to produce:
-    results/<scenario>/<model_dir>/consolidated.jsonl
+- Calls run_batch_inference to produce:
+    results/<method>/<model_dir>/consolidated.jsonl
 - Then calls run_all_eval.py using that consolidated.jsonl as --model_output_file_path
 
 Usage:
@@ -40,19 +40,19 @@ def _model_dir_name(model: str) -> str:
     return model.split("/")[-1]
 
 
-def _find_consolidated(output_dir: Path, model: str, scenario_name_hint: str | None = None, prompt_version: str = None) -> Path:
+def _find_consolidated(output_dir: Path, model: str, method_name_hint: str | None = None, prompt_version: str = None) -> Path:
     """
     Find consolidated.jsonl produced by inference.
-    If scenario_name_hint is given, prefer that path; otherwise pick the newest match.
+    If method_name_hint is given, prefer that path; otherwise pick the newest match.
     """
     model_dir = _model_dir_name(model)
 
     output_name = f"consolidated_{prompt_version}.jsonl" if prompt_version else "consolidated.jsonl"
 
     # Preferred expected location, including a possible checkpoint run subdirectory.
-    if scenario_name_hint:
-        scenario_root = output_dir / scenario_name_hint / model_dir
-        matches = list(scenario_root.glob(f"**/{output_name}"))
+    if method_name_hint:
+        method_root = output_dir / method_name_hint / model_dir
+        matches = list(method_root.glob(f"**/{output_name}"))
         if matches:
             matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             return matches[0]
@@ -97,7 +97,7 @@ def main():
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--batch_size", type=int, default=9)
     ap.add_argument("--no_gaze", action="store_true")
-    ap.add_argument("--scenario", type=int, choices=[2, 3], default=None)
+    ap.add_argument("--method", choices=["lgg", "de"], default=None)
     ap.add_argument("--lora_dir", type=str, default=None)
     ap.add_argument("--debug", action="store_true")
     ap.add_argument("--prompt_version", type=str, default="v2", choices=["v1", "v2"],
@@ -108,9 +108,9 @@ def main():
 
     args = ap.parse_args()
 
-    if args.no_gaze == (args.scenario is not None):
-        ap.error("select exactly one of --no_gaze or --scenario")
-    if args.scenario is not None and not args.lora_dir:
+    if args.no_gaze == (args.method is not None):
+        ap.error("select exactly one of --no_gaze or --method")
+    if args.method is not None and not args.lora_dir:
         ap.error("--lora_dir is required for LGG and Dual Encoding")
 
     here = _PROJECT_ROOT
@@ -140,8 +140,8 @@ def main():
         infer_cmd += ["--do_sample"]
     if args.no_gaze:
         infer_cmd += ["--no_gaze"]
-    if args.scenario is not None:
-        infer_cmd += ["--scenario", str(args.scenario), "--lora_dir", args.lora_dir]
+    if args.method is not None:
+        infer_cmd += ["--method", args.method, "--lora_dir", args.lora_dir]
     if args.debug:
         infer_cmd += ["--debug"]
     if args.prompt_version:
@@ -152,9 +152,14 @@ def main():
     # Small delay to ensure filesystem timestamps settle on some systems
     time.sleep(0.2)
 
-    scenario_hint = "baseline" if args.no_gaze else {2: "lgg", 3: "dual_encoding"}[args.scenario]
+    method_hint = "baseline" if args.no_gaze else {"lgg": "lgg", "de": "dual_encoding"}[args.method]
 
-    consolidated = _find_consolidated(output_dir=output_dir, model=args.model, scenario_name_hint=scenario_hint, prompt_version=args.prompt_version)
+    consolidated = _find_consolidated(
+        output_dir=output_dir,
+        model=args.model,
+        method_name_hint=method_hint,
+        prompt_version=args.prompt_version,
+    )
     print(f"\n[INFO] Using consolidated output: {consolidated}")
 
     # 2) Run eval on consolidated.jsonl

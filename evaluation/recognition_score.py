@@ -75,12 +75,12 @@ def evaluator(description_json_file_path, model_output_file_path, threshold, is_
     
     # Extract model name from metadata
     model_name = None
-    model_scenario = None
+    model_method = None
     prompt_version = None
     for i in model_output:
         if 'model' in i:
             model_name = i.get('model', 'unknown')
-            model_scenario = i.get('scenario', None)
+            model_method = i.get('method', None)
             prompt_version = i.get('prompt_version', None)
             break
 
@@ -116,10 +116,10 @@ def evaluator(description_json_file_path, model_output_file_path, threshold, is_
     print("\nTotal entity num: ", total_entity_num)
     print("Total hitted num: ", total_hitted_num)
 
-    return macro_avg_recall, micro_avg_recall, model_name, model_scenario, prompt_version
+    return macro_avg_recall, micro_avg_recall, model_name, model_method, prompt_version
 
 def main(cogbench_description_file_path, model_output_file_path, scores_output_dir):
-    macro_avg_recall, micro_avg_recall, model_name, model_scenario, prompt_version = evaluator(cogbench_description_file_path, model_output_file_path, threshold=0.6, is_print=False)
+    macro_avg_recall, micro_avg_recall, model_name, model_method, prompt_version = evaluator(cogbench_description_file_path, model_output_file_path, threshold=0.6, is_print=False)
     
     print("Macro Avg. Recall: ", macro_avg_recall)
     print("Micro Avg. Recall: ", micro_avg_recall)
@@ -142,8 +142,8 @@ def main(cogbench_description_file_path, model_output_file_path, scores_output_d
                 scores_data = json.load(f)
         
         scores_data["model"] = model_name
-        if model_scenario is not None:
-            scores_data["scenario"] = model_scenario
+        if model_method is not None:
+            scores_data["method"] = model_method
         if prompt_version is not None:
             scores_data["prompt_version"] = prompt_version
         scores_data["recognition"] = {
@@ -177,7 +177,7 @@ if __name__ == "__main__":
         "--scores_output_dir",
         type=str,
         default=None,
-        help="Optional output directory for scores.json. If omitted, uses results/<scenario>/<model>/.",
+        help="Optional output directory for scores.json. If omitted, uses results/<method>/<model>/.",
     )
     args = parser.parse_args()
 

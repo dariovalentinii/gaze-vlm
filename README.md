@@ -5,12 +5,10 @@ Gaze-conditioned inference and fine-tuning for CogBench with LLaVA-family vision
 This repository contains three supported methods:
 
 - **Baseline**: standard inference without gaze injection.
-- **Learnable Gaze Gating (LGG)**: the former Scenario 2. A learned affine-sigmoid gate weights visual patch features from gaze heatmaps.
-- **Dual Encoding (DE)**: the former Scenario 3. A separate vision encoder embeds the heatmap before gaze gating.
+- **Learnable Gaze Gating (LGG)**: a learned affine-sigmoid gate weights visual patch features from gaze heatmaps.
+- **Dual Encoding (DE)**: a separate vision encoder embeds the heatmap before gaze gating.
 
-The refactor preserves the existing model adapters, training classes, losses, command-line arguments, and checkpoint contents. Numeric scenario identifiers remain available for compatibility: `--scenario 2` selects LGG and `--scenario 3` selects DE.
-
-Some internal symbols still use the legacy `Scenario1`/`S1` names. They are retained deliberately to avoid changing existing classes and adapter interfaces; the public inference entry point only exposes baseline, LGG, and DE.
+The refactor preserves the existing model computations, training losses, adapter behavior, and checkpoint contents. The public inference entry point selects gaze methods by name: `--method lgg` or `--method de`.
 
 ## Repository layout
 
@@ -20,7 +18,7 @@ Some internal symbols still use the legacy `Scenario1`/`S1` names. They are reta
 ├── src/
 │   ├── data/                    # prompts and heatmap processing
 │   ├── models/                  # existing LLaVA adapters
-│   └── scenarios/               # shared inference runner
+│   └── inference/               # shared inference protocol and runner
 ├── training/
 │   ├── lgg/                     # LGG trainers and shared LGG helpers
 │   ├── dual_encoding/           # DE trainers and shared DE helpers
@@ -95,7 +93,7 @@ python run_batch_inference.py \
   --model llava-hf/llava-1.5-7b-hf \
   --images_dir /path/to/images \
   --heatmaps_dir /path/to/heatmaps \
-  --scenario 2 \
+  --method lgg \
   --lora_dir training/lgg/llava-1.5-7b-hf/my_run
 ```
 
@@ -106,11 +104,11 @@ python run_batch_inference.py \
   --model llava-hf/llava-1.5-7b-hf \
   --images_dir /path/to/images \
   --heatmaps_dir /path/to/heatmaps \
-  --scenario 3 \
+  --method de \
   --lora_dir training/dual_encoding/llava-1.5-7b-hf/my_run
 ```
 
-Checkpoints stored in the previous `fine_tune/scenario2/...` and `fine_tune/scenario3/...` layouts remain accepted.
+Checkpoints stored in earlier directory layouts remain accepted.
 
 Outputs are written below `results/baseline`, `results/lgg`, or `results/dual_encoding`. Each run first writes `full_<prompt_version>.jsonl` and then consolidates it into `consolidated_<prompt_version>.jsonl`.
 
@@ -171,6 +169,6 @@ python evaluation/run_all_eval.py \
 
 ## Current scope
 
-Cross-validation, Scenario 1 gaze weighting, and Scenario 4 experiments are intentionally outside this refactor. They remain available only in the private source repository while baseline, LGG, and DE are validated here.
+Cross-validation and experimental direct-weighting variants are intentionally outside this refactor. They remain available only in the private source repository while baseline, LGG, and DE are validated here.
 
 No license has been selected yet. Add one before making the repository public.

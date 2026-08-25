@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""train_s2_llava16_7b_attn_align.py
-"""
+"""Learnable Gaze Gating training for LLaVA-NeXT."""
 
 from __future__ import annotations
 

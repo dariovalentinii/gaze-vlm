@@ -21,9 +21,9 @@ from src.data.constants import (
     ROOT,
     STRICT_LLAVA_NEXT_BATCH,
 )
-from src.models.adapter_factory import create_s1_adapter
+from src.models.adapter_factory import create_inference_adapter
 from src.models.llava_next import LlavaNextHFAdapter
-from src.scenarios.scenario1 import Scenario1, S1Config
+from src.inference.runner import GenerationConfig, InferenceRunner
 
 
 def _resolve_lora_run_dir(lora_dir: str) -> Path:
@@ -58,7 +58,7 @@ def _resolve_lora_run_dir(lora_dir: str) -> Path:
     )
 
 
-def normalize_scenario_inputs(images, heatmaps, cors):
+def normalize_inference_inputs(images, heatmaps, cors):
     is_single = isinstance(images, Image.Image)
     images = [images] if is_single else images
     heatmaps = [heatmaps] if is_single else heatmaps
@@ -315,7 +315,7 @@ def group_outputs_by_cor(full_outputs_path: Path) -> None:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", type=str, default="llava-hf/llava-1.5-7b-hf")
-    ap.add_argument("--lora_dir", type=str, default=None, help="Path to LoRA/checkpoint artifacts (required for scenario 2/3).")
+    ap.add_argument("--lora_dir", type=str, default=None, help="Path to LoRA/checkpoint artifacts (required for LGG/DE).")
 
     ap.add_argument("--images_dir", type=str, default=str(ROOT / "data" / "cogbench_v1-1" / "images"),
                     help="Absolute path to images directory")
@@ -340,11 +340,10 @@ def main():
     ap.add_argument("--no_gaze", action="store_true",
                     help="Disable gaze-weighted vision hook")
     ap.add_argument(
-        "--scenario",
-        type=int,
-        choices=[2, 3],
+        "--method",
+        choices=["lgg", "de"],
         default=None,
-        help="Gaze method: 2 = Learnable Gaze Gating (LGG), 3 = Dual Encoding (DE).",
+        help="Gaze method: Learnable Gaze Gating (lgg) or Dual Encoding (de).",
     )
     ap.add_argument("--prompt_version", type=str, default="v2", choices=["v1", "v2"],
                     help="Prompt set version to use (v1 or v2)")
@@ -358,15 +357,15 @@ def main():
         print("Error: --img_num and --cor must be specified together, or both omitted")
         sys.exit(1)
 
-    # Validate scenario selection
-    if args.scenario is None and not args.no_gaze:
-        print("Error: --no_gaze must be set when --scenario is not specified")
+    # Select exactly one inference method.
+    if args.method is None and not args.no_gaze:
+        print("Error: --no_gaze must be set when --method is not specified")
         sys.exit(1)
-    if args.scenario is not None and args.no_gaze:
-        print("Error: --scenario and --no_gaze are mutually exclusive")
+    if args.method is not None and args.no_gaze:
+        print("Error: --method and --no_gaze are mutually exclusive")
         sys.exit(1)
-    if args.scenario in {2, 3} and not args.lora_dir:
-        print("Error: --lora_dir is required for --scenario 2 (LGG) or 3 (DE)")
+    if args.method is not None and not args.lora_dir:
+        print("Error: --lora_dir is required for LGG or DE")
         sys.exit(1)
 
     if args.entries_jsonl:
@@ -400,7 +399,7 @@ def main():
 
     print(f"Loading model {args.model}...")
     print(f"Looking for LoRA adapters in: {args.lora_dir}" if args.lora_dir else "No LoRA adapters")
-    adapter = create_s1_adapter(
+    adapter = create_inference_adapter(
         model_name=args.model,
         device=args.device,
         torch_dtype=dtype_map[args.dtype],
@@ -414,7 +413,7 @@ def main():
         sys.exit(1)
 
     # Config
-    cfg = S1Config(
+    cfg = GenerationConfig(
         max_new_tokens=args.max_new_tokens,
         do_sample=args.do_sample,
         temperature=args.temperature,
@@ -422,13 +421,11 @@ def main():
         prompt_version=args.prompt_version,
     )
 
-    scenario = Scenario1(cfg=cfg)
+    runner = InferenceRunner(cfg=cfg)
     if args.no_gaze:
-        scenario_name = "baseline"
-        scenario_id = 0
+        method_name = "baseline"
     else:
-        scenario_id = args.scenario
-        scenario_name = {2: "lgg", 3: "dual_encoding"}[scenario_id]
+        method_name = {"lgg": "lgg", "de": "dual_encoding"}[args.method]
         
     
 
@@ -436,8 +433,8 @@ def main():
     output_root = Path(args.output_dir).resolve()
     model_name = args.model
     model_dir_name = model_name.split("/")[-1] if "/" in model_name else model_name
-    output_dir = output_root / scenario_name / model_dir_name
-    # safety check on model and scenario
+    output_dir = output_root / method_name / model_dir_name
+    # Safety check on model and method for the current checkpoint layout.
     if args.lora_dir:
         lora_run_dir = _resolve_lora_run_dir(args.lora_dir)
         lora_model = lora_run_dir.parent
@@ -448,16 +445,12 @@ def main():
                 f"for model '{lora_model_name}', not '{model_dir_name}'"
             )
             sys.exit(1)
-        lora_scenario_name = lora_model.parent.name
-        accepted_scenario_names = {
-            0: {"baseline", "no_gaze"},
-            2: {"lgg", "scenario2"},
-            3: {"dual_encoding", "scenario3"},
-        }[scenario_id]
-        if lora_scenario_name not in accepted_scenario_names:
+        checkpoint_method_name = lora_model.parent.name
+        known_method_names = {"lgg", "dual_encoding"}
+        if checkpoint_method_name in known_method_names and checkpoint_method_name != method_name:
             print(
                 f"Error: LoRA directory '{args.lora_dir}' resolves to run '{lora_run_dir.name}' "
-                f"for scenario '{lora_scenario_name}', not '{scenario_name}'"
+                f"for method '{checkpoint_method_name}', not '{method_name}'"
             )
             sys.exit(1)
         output_dir = output_dir / f"{lora_run_dir.name}"
@@ -477,7 +470,7 @@ def main():
     with open(output_path, "w") as f_out:
         f_out.write(json.dumps({
             "model": args.model,
-            "scenario": scenario_id,
+            "method": method_name,
             "prompt_version": args.prompt_version,
         }) + "\n")
         for batch_idx, batch in enumerate(tqdm(dataloader, desc="Processing")):
@@ -496,8 +489,8 @@ def main():
                     f_out.flush()
                     continue
 
-                # Run inference via Scenario1
-                outputs = scenario.run(
+                # Run inference via InferenceRunner
+                outputs = runner.run(
                     adapter=adapter,
                     images=batch.images,
                     heatmaps=batch.heatmaps,

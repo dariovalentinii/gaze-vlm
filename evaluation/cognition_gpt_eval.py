@@ -364,11 +364,11 @@ def main(ann_json_file_path, model_output_file_path, eval_output_dir, model_name
     
     # Extract model info and determine output file path
     model_name = None
-    model_scenario = None
+    model_method = None
     prompt_version = None
     if model_output and 'model' in model_output[0]:
         model_name = model_output[0]['model']
-        model_scenario = model_output[0].get('scenario')
+        model_method = model_output[0].get('method')
         prompt_version = model_output[0].get('prompt_version')
             
         if eval_output_dir:
@@ -383,7 +383,7 @@ def main(ann_json_file_path, model_output_file_path, eval_output_dir, model_name
         
         # Write metadata to output file
         with open(eval_output_file, "w") as f:
-            json.dump({"model": model_name, "scenario": model_scenario, "prompt_version": prompt_version}, f)
+            json.dump({"model": model_name, "method": model_method, "prompt_version": prompt_version}, f)
             f.write('\n')
         
         # Remove the metadata row from model_output for processing
@@ -422,7 +422,7 @@ if __name__ == "__main__":
         "--eval_output_dir",
         type=str,
         default=None,
-        help="Output directory. If default value is used, will auto-save to results/{model_scenario}/{model_name}/cognition_gpt_eval.jsonl",
+        help="Output directory. If default value is used, will auto-save to results/{model_method}/{model_name}/cognition_gpt_eval.jsonl",
     )
     parser.add_argument(
         "--gemini_name",

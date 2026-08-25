@@ -4,7 +4,7 @@ from typing import Optional, Type, Dict
 import torch
 from transformers import AutoConfig
 
-from src.scenarios.scenario1 import S1Adapter
+from src.inference.runner import InferenceAdapter
 
 # Implemented adapters
 from src.models.llava_15 import LlavaHFAdapter  # LLaVA-1.5 HF class
@@ -45,14 +45,14 @@ def _resolve_key(model_name: str, model_type: Optional[str]) -> str:
     return "unknown"
 
 
-def create_s1_adapter(
+def create_inference_adapter(
     model_name: str,
     device: str = "cuda",
     torch_dtype: Optional[torch.dtype] = None,
     lora_dir: Optional[str] = None,
-) -> S1Adapter:
+) -> InferenceAdapter:
     """
-    Returns an adapter implementing generate_with_weighted_patches for Scenario 1.
+    Returns an adapter implementing generate_with_weighted_patches for inference.
     """
     cfg = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
     key = _resolve_key(model_name, getattr(cfg, "model_type", None))
@@ -66,7 +66,7 @@ def create_s1_adapter(
     if key not in registry:
         supported = ", ".join(sorted(registry.keys()))
         raise ValueError(
-            f"No Scenario-1 adapter for model='{model_name}' (model_type='{getattr(cfg,'model_type',None)}'). "
+            f"No inference adapter for model='{model_name}' (model_type='{getattr(cfg,'model_type',None)}'). "
             f"Resolved key='{key}'. Supported keys: {supported}."
         )
 
@@ -75,4 +75,3 @@ def create_s1_adapter(
     return AdapterCls(model_name=model_name, device=device, torch_dtype=torch_dtype, lora_dir=lora_dir)
     # else:
     #     return AdapterCls(model_name=model_name, device=device, torch_dtype=torch_dtype)
-

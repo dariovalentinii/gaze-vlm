@@ -16,15 +16,15 @@ from src.data.heatmaps import (
     heatmap_to_patch_weights,
     apply_patch_weighting,
     GazeInjector,
-    GazeInjectorScenario3,
+    DualEncodingGazeInjector,
 )
 from src.data.prompts import build_prompt_texts
-from src.scenarios.scenario1 import S1Config
+from src.inference.runner import GenerationConfig
 
 
 class LlavaNextHFAdapter:
     """
-    Minimal adapter for Scenario 1 using HuggingFace LlavaNextForConditionalGeneration.
+    Minimal adapter for inference using HuggingFace LlavaNextForConditionalGeneration.
     To be used with:
     llava-hf/llava-v1.6-vicuna-7b-hf
     llava-hf/llava-v1.6-vicuna-13b-hf
@@ -84,12 +84,12 @@ class LlavaNextHFAdapter:
 
         # Optional learned modules
         self.gaze_injector: Optional[GazeInjector] = None
-        self.gaze_injector_s3: Optional[GazeInjectorScenario3] = None
+        self.dual_encoding_injector: Optional[DualEncodingGazeInjector] = None
         self.heatmap_encoder = None
         self._heatmap_hook_handle = None
         self._heatmap_layer_out: Optional[torch.Tensor] = None
 
-        # Resolve LoRA/checkpoint layout (current S2/S3 format):
+        # Resolve LoRA/checkpoint layout (current LGG/DE format):
         # - run folder containing projector_lora/ (optional), gaze_injector.pt, components.json
         # - projector_lora folder directly
         self.checkpoint_dir: Optional[Path] = None
@@ -104,7 +104,7 @@ class LlavaNextHFAdapter:
         if inj_dir is not None:
             self._load_gaze_injector(inj_dir)
 
-        # Scenario-3 heatmap encoder LoRA
+        # Dual Encoding heatmap encoder LoRA
         if self.checkpoint_dir is not None:
             self._load_heatmap_encoder(self.checkpoint_dir)
 
@@ -117,10 +117,10 @@ class LlavaNextHFAdapter:
           (projector_lora_dir, checkpoint_root_dir)
 
         Accepted inputs:
-          - Scenario-2/3 run dir (contains projector_lora/ or lora_adapter/)
-          - Scenario-2/3 projector dir itself (.../projector_lora)
-          - Scenario-4 lora_adapter dir itself (.../lora_adapter)
-          - Scenario-2/3 run dir without projector LoRA (injector-only): no projector_lora/
+          - LGG/DE run dir (contains projector_lora/ or lora_adapter/)
+          - LGG/DE projector dir itself (.../projector_lora)
+          - legacy LLM adapter directory (.../lora_adapter)
+          - LGG/DE run dir without projector LoRA (injector-only): no projector_lora/
         """
         if not path.exists():
             raise FileNotFoundError(f"LoRA path not found: {path}")
@@ -159,7 +159,7 @@ class LlavaNextHFAdapter:
     def _read_injector_min_gate(self, inj_dir: Path) -> float:
         min_gate = 0.05
 
-        # Scenario-2/3 sidecar
+        # LGG/DE sidecar
         comp = inj_dir / "components.json"
         if comp.exists():
             try:
@@ -181,21 +181,21 @@ class LlavaNextHFAdapter:
         min_gate = self._read_injector_min_gate(inj_dir)
         sd = torch.load(pt, map_location="cpu")
 
-        # Scenario-3 injector state has projection/norm params and works on [B,N,D].
-        is_s3 = any(k.startswith("proj.") or k.startswith("norm.") for k in sd.keys())
-        if is_s3:
+        # Dual Encoding injector state has projection/norm params and works on [B,N,D].
+        is_dual_encoding = any(k.startswith("proj.") or k.startswith("norm.") for k in sd.keys())
+        if is_dual_encoding:
             d_model = int(getattr(self.model.config.vision_config, "hidden_size", 1024))
-            injector_s3 = GazeInjectorScenario3(d_model=d_model, min_gate=min_gate)
-            injector_s3.load_state_dict(sd, strict=True)
-            self.gaze_injector_s3 = injector_s3.to(self.device).eval()
+            dual_encoding_injector = DualEncodingGazeInjector(d_model=d_model, min_gate=min_gate)
+            dual_encoding_injector.load_state_dict(sd, strict=True)
+            self.dual_encoding_injector = dual_encoding_injector.to(self.device).eval()
             self.gaze_injector = None
-            print(f"[LlavaNextHFAdapter] Loaded Scenario-3 gaze injector from: {pt}")
+            print(f"[LlavaNextHFAdapter] Loaded Dual Encoding gaze injector from: {pt}")
             return
 
         injector = GazeInjector(min_gate=min_gate)
         injector.load_state_dict(sd, strict=True)
         self.gaze_injector = injector.to(self.device).eval()
-        self.gaze_injector_s3 = None
+        self.dual_encoding_injector = None
         print(f"[LlavaNextHFAdapter] Loaded gaze injector from: {pt}")
 
 
@@ -245,7 +245,7 @@ class LlavaNextHFAdapter:
         self.heatmap_encoder = PeftModel.from_pretrained(heatmap_encoder_base, str(hm_lora_dir)).to(self.device)
         self.heatmap_encoder.eval()
 
-        # Mirror train_s3 logic: when possible, capture the selected vision layer
+        # Mirror train_de logic: when possible, capture the selected vision layer
         # via hook to avoid requesting full hidden_states.
         vision_layer = getattr(self.model.config, "vision_feature_layer", None)
         num_vision_layers = int(getattr(self.model.config.vision_config, "num_hidden_layers", 0) or 0)
@@ -284,16 +284,16 @@ class LlavaNextHFAdapter:
 
 
     @torch.no_grad()
-    def _embed_heatmaps_for_s3(self, heatmaps: list[torch.Tensor]) -> torch.Tensor:
+    def _embed_heatmaps_for_dual_encoding(self, heatmaps: list[torch.Tensor]) -> torch.Tensor:
         """
-        Scenario-3 preprocessing:
+        Dual Encoding preprocessing:
           - convert heatmaps to RGB PIL
           - process like images for heatmap encoder
           - encode with heatmap vision tower (possibly LoRA-finetuned)
           - return patch embeddings [B,N,D]
         """
         if self.heatmap_encoder is None:
-            raise RuntimeError("Scenario-3 inference requested but heatmap encoder is not loaded.")
+            raise RuntimeError("Dual Encoding inference requested but heatmap encoder is not loaded.")
 
         heatmap_pils = heatmaps_to_rgb_pils(heatmaps)
         hm_pix = self.processor.image_processor(
@@ -366,13 +366,13 @@ class LlavaNextHFAdapter:
         self,
         images: list[Image.Image],
         heatmaps: list[torch.Tensor],
-        cfg: S1Config,
+        cfg: GenerationConfig,
         *,
         cors: list[str],
         use_vision_hook: bool = True,
     ) -> list[str]:
         """
-        Scenario 1 end-to-end (batched):
+        inference end-to-end (batched):
           - preprocess heatmaps with same pipeline as images
           - compute patch weights from heatmaps
           - build and tokenize prompts on-demand
@@ -393,12 +393,12 @@ class LlavaNextHFAdapter:
         assert len(heatmaps) == B
         assert len(cors) == B
 
-        use_s3 = use_vision_hook and (self.gaze_injector_s3 is not None) and (self.heatmap_encoder is not None)
+        use_dual_encoding = use_vision_hook and (self.dual_encoding_injector is not None) and (self.heatmap_encoder is not None)
 
         # 1) preprocess heatmaps with the image processor (batched)
         if use_vision_hook:
-            if use_s3:
-                hm_feats = self._embed_heatmaps_for_s3(heatmaps)  # [B,N,D]
+            if use_dual_encoding:
+                hm_feats = self._embed_heatmaps_for_dual_encoding(heatmaps)  # [B,N,D]
             else:
                 weights = self._preprocess_heatmaps_to_weights(heatmaps)  # [B,N]
 
@@ -435,7 +435,7 @@ class LlavaNextHFAdapter:
 
                 Bt, T, D = feats.shape
 
-                if use_s3:
+                if use_dual_encoding:
                     if Bt != hm_feats.shape[0]:
                         raise RuntimeError(
                             f"[LlavaNextHFAdapter] Heatmap alignment mismatch: "
@@ -456,7 +456,7 @@ class LlavaNextHFAdapter:
                 cls = feats[:, :1, :]
                 patches = feats[:, 1:, :]
 
-                if use_s3:
+                if use_dual_encoding:
                     if patches.shape[1] != hm_feats.shape[1]:
                         raise RuntimeError(
                             f"[LlavaNextHFAdapter] Patch count mismatch: {patches.shape[1]} vs heatmap feats {hm_feats.shape[1]}"
@@ -468,15 +468,15 @@ class LlavaNextHFAdapter:
                         )
 
                 try:
-                    if use_s3:
-                        g = self.gaze_injector_s3(hm_feats.float()).to(dtype=patches.dtype)  # [B,N,1]
+                    if use_dual_encoding:
+                        g = self.dual_encoding_injector(hm_feats.float()).to(dtype=patches.dtype)  # [B,N,1]
                         weighted_patches = patches * g
                     # If a learned injector is available, use it:
                     elif self.gaze_injector is not None:
                         g = self.gaze_injector(weights.float()).to(dtype=patches.dtype)  # [B,N,1]
                         weighted_patches = patches * g
                     else:
-                        # Scenario 1 direct weighting
+                        # inference direct weighting
                         weighted_patches = apply_patch_weighting(patches, weights)
 
                     new_feats = torch.cat([cls, weighted_patches], dim=1)
@@ -488,7 +488,7 @@ class LlavaNextHFAdapter:
                         out.last_hidden_state = new_feats
                     return out
                 except Exception:
-                    shape_msg = f"heatmap feats shape: {hm_feats.shape}." if use_s3 else f"weights shape: {weights.shape}."
+                    shape_msg = f"heatmap feats shape: {hm_feats.shape}." if use_dual_encoding else f"weights shape: {weights.shape}."
                     raise RuntimeError(
                         f"[LlavaNextHFAdapter] Failed to weight patches."
                         f"Patch tokens shape: {patches.shape}, {shape_msg}"

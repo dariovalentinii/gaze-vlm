@@ -1,8 +1,4 @@
-"""Shared inference protocol and runner.
-
-The legacy S1 names are retained to keep the existing adapter interface stable.
-Baseline, LGG, and Dual Encoding all use this thin dispatch layer.
-"""
+"""Shared inference protocol, configuration, and runner."""
 
 from __future__ import annotations
 from dataclasses import dataclass
@@ -10,14 +6,14 @@ from typing import List, Protocol
 from PIL import Image
 import torch
 
-class S1Adapter(Protocol):
+class InferenceAdapter(Protocol):
     device: torch.device
 
     def generate_with_weighted_patches(
         self,
         images: List[Image.Image],
         heatmaps: List[torch.Tensor],
-        cfg: "S1Config",
+        cfg: "GenerationConfig",
         *,
         cors: List[str],
         use_vision_hook: bool = True,
@@ -25,7 +21,7 @@ class S1Adapter(Protocol):
         ...
 
 @dataclass
-class S1Config:
+class GenerationConfig:
     max_new_tokens: int = 256
     do_sample: bool = False
     temperature: float = 0.0
@@ -33,12 +29,12 @@ class S1Config:
     prompt_version: str = "v2"
 
 @dataclass
-class Scenario1:
-    cfg: S1Config
+class InferenceRunner:
+    cfg: GenerationConfig
 
     def run(
         self,
-        adapter: S1Adapter,
+        adapter: InferenceAdapter,
         images: List[Image.Image],
         heatmaps: List[torch.Tensor],
         *,

@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""train_s3_llava15_attn_align.py
+"""Dual Encoding training for LLaVA 1.5.
 
-Scenario 3 (LLaVA-1.5):
-  - Keep Scenario-2 learnable gaze injection (GazeInjector).
-  - Keep Scenario-2 optional LoRA on the multimodal projector.
+  - Keep LGG learnable gaze injection (GazeInjector).
+  - Keep LGG optional LoRA on the multimodal projector.
   - Add a *separate* heatmap encoder: a fine-tuned copy of the same ViT used for images.
   - Fuse image-vision features (optionally gaze-weighted) with heatmap-vision features,
     then feed to the LLM as usual.
@@ -11,7 +10,7 @@ Scenario 3 (LLaVA-1.5):
 Training objective remains attention-alignment (KL/MSE/CE) between
 LLM attention over image patch tokens and the gaze distribution.
 
-Input JSONL schema is identical to train_s2_llava15_attn_align.py.
+Input JSONL schema is identical to LGG training.
 """
 
 from __future__ import annotations
@@ -59,7 +58,7 @@ from training.dual_encoding.common import (
     restrict_vision_lora_to_last_k_layers,
     distill_kl_loss,
 )
-from src.data.heatmaps import heatmap_to_patch_weights, GazeInjectorScenario3
+from src.data.heatmaps import heatmap_to_patch_weights, DualEncodingGazeInjector
 from src.data.prompts import PROMPTS_FT
 from src.models.utils import unwrap_to_llava
 
@@ -100,7 +99,7 @@ def heatmaps_to_pixel_values_for_encoder(
     return pix.to(device)
 
 # -----------------------
-# Attention alignment (copied from scenario-2 script)
+# Attention alignment (copied from LGG script)
 # -----------------------
 def _find_longest_run_positions(mask_1d: torch.Tensor) -> List[int]:
     idx = mask_1d.nonzero(as_tuple=False).view(-1).tolist()
@@ -354,7 +353,7 @@ def main() -> None:
 
     # Trainable injector
     core_llava = unwrap_to_llava(model)
-    injector = GazeInjectorScenario3(
+    injector = DualEncodingGazeInjector(
         d_model=core_llava.config.vision_config.hidden_size,
         init_scale=args.injector_init_scale,
         init_bias=args.injector_init_bias,

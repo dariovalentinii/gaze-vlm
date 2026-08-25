@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""train_s3_llava16_attn_align.py
+"""Dual Encoding training for LLaVA-OneVision.
 
-Scenario 3 (LLaVA-1.6/Vicuna):
-  - Keep Scenario-2 learnable gaze injection (GazeInjector).
-  - Keep Scenario-2 optional LoRA on the multimodal projector.
+  - Keep LGG learnable gaze injection (GazeInjector).
+  - Keep LGG optional LoRA on the multimodal projector.
   - Add a *separate* heatmap encoder: a fine-tuned copy of the same ViT used for images.
   - Fuse image-vision features (optionally gaze-weighted) with heatmap-vision features,
     then feed to the LLM as usual.
@@ -11,7 +10,7 @@ Scenario 3 (LLaVA-1.6/Vicuna):
 Training objective remains attention-alignment (KL/MSE/CE) between
 LLM attention over image patch tokens and the gaze distribution.
 
-Input JSONL schema is identical to train_s2_llava15_attn_align.py.
+Input JSONL schema is identical to LGG training.
 """
 
 from __future__ import annotations
@@ -87,7 +86,7 @@ from training.attention_alignment import (
     attention_alignment_loss_from_captured,
     install_lastk_attn_slice_capture,
 )
-from src.data.heatmaps import heatmap_to_patch_weights, GazeInjectorScenario3, pack_gaze_probs_like_llava_next
+from src.data.heatmaps import heatmap_to_patch_weights, DualEncodingGazeInjector, pack_gaze_probs_like_llava_next
 from src.data.prompts import PROMPTS_FT
 from src.models.utils import unwrap_to_llava
 from src.models.llava_15 import LlavaHFAdapter
@@ -247,7 +246,7 @@ def main() -> None:
 
     # Trainable injector
     core_llava = unwrap_to_llava(model)
-    injector = GazeInjectorScenario3(
+    injector = DualEncodingGazeInjector(
         d_model=core_llava.config.vision_config.hidden_size,
         init_scale=args.injector_init_scale,
         init_bias=args.injector_init_bias,

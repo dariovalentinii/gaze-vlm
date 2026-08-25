@@ -8,7 +8,7 @@ from PIL import Image
 
 class GazeInjector(nn.Module):
     """
-    Same injector used by train_s2_llava15_attn_align.py:
+    Learnable Gaze Gating injector:
       g = min_gate + (1-min_gate) * sigmoid(scale * w + bias)
     w is expected in [0,1], shape [B,N]. Output g in [min_gate,1], shape [B,N].
     """
@@ -24,9 +24,9 @@ class GazeInjector(nn.Module):
             g = self.min_gate + (1.0 - self.min_gate) * g
         return g.unsqueeze(-1)  # [B,N,1]
     
-class GazeInjectorScenario3(nn.Module):
+class DualEncodingGazeInjector(nn.Module):
     """
-    Scenario 3 injector:
+    Dual Encoding injector:
       input:  h in R^{B,N,D} (heatmap patch embeddings; not necessarily in [0,1])
       output: g in [min_gate, 1] with shape [B,N,1] (scalar gate per patch)
     """
