@@ -10,6 +10,37 @@ This repository contains three supported methods:
 
 The refactor preserves the existing model computations, training losses, adapter behavior, and checkpoint contents. The public inference entry point selects gaze methods by name: `--method lgg` or `--method de`.
 
+## Which file should I run?
+
+| Goal | Entry point |
+| --- | --- |
+| Run Baseline, LGG, or DE inference | `run_batch_inference.py` |
+| Train LGG | A model-specific script in `training/lgg/` |
+| Train DE | A model-specific script in `training/dual_encoding/` |
+| Evaluate an existing inference JSONL | `evaluation/run_all_eval.py` |
+| Run inference and evaluation together | `scripts/infer_and_eval.py` |
+
+See the [training guide](training/README.md) to choose a trainer and the [evaluation guide](evaluation/README.md) for the complete scoring pipeline.
+
+### Inference and evaluation flow
+
+```text
+run_batch_inference.py
+    -> src/models/adapter_factory.py
+    -> model-family adapter in src/models/
+    -> src/inference/runner.py
+    -> results/<method>/<model>/.../consolidated_<prompt_version>.jsonl
+    -> evaluation/run_all_eval.py
+```
+
+LGG and DE training produce a run directory that is passed to inference with `--lora_dir`:
+
+```text
+training/lgg/ or training/dual_encoding/
+    -> <model>/<run_name>/
+    -> run_batch_inference.py --lora_dir <model>/<run_name>/
+```
+
 ## Repository layout
 
 ```text
@@ -114,6 +145,8 @@ Outputs are written below `results/baseline`, `results/lgg`, or `results/dual_en
 
 ## Training
 
+For trainer selection, inputs, outputs, and minimal commands, see [training/README.md](training/README.md).
+
 Choose the trainer that matches the method and model family:
 
 | Method | Model family | Script |
@@ -161,12 +194,12 @@ Training artifacts are stored below the selected method and model, for example `
 
 ## Evaluation
 
+For the execution order, input/output files, and Gemini configuration, see [evaluation/README.md](evaluation/README.md).
+
 ```bash
 python evaluation/run_all_eval.py \
   --model_output_file_path results/lgg/llava-1.5-7b-hf/my_run/consolidated_v2.jsonl \
   --cogbench_description_file_path /path/to/cogbench_v1_description.json
 ```
-
-
 
 No license has been selected yet. Add one before making the repository public.
