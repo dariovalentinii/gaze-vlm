@@ -167,8 +167,6 @@ python evaluation/run_all_eval.py \
   --cogbench_description_file_path /path/to/cogbench_v1_description.json
 ```
 
-## Current scope
 
-Cross-validation and experimental direct-weighting variants are intentionally outside this refactor. They remain available only in the private source repository while baseline, LGG, and DE are validated here.
 
 No license has been selected yet. Add one before making the repository public.
