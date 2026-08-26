@@ -54,9 +54,10 @@ training/lgg/ or training/dual_encoding/
 │       ├── results.py           # JSONL consolidation
 │       └── runner.py            # shared inference protocol and runner
 ├── training/
-│   ├── lgg/                     # LGG trainers and shared LGG helpers
-│   ├── dual_encoding/           # DE trainers and shared DE helpers
-│   ├── attention_alignment.py   # shared LLaVA-NeXT attention logic
+│   ├── lgg/                     # LGG trainers and model-specific attention
+│   ├── dual_encoding/           # DE trainers and model-specific attention
+│   ├── attention_alignment.py   # shared LLaVA-NeXT-style attention logic
+│   ├── attention_utils.py       # generic attention capture helpers
 │   ├── modeling.py              # shared model/adapter selection
 │   ├── prompting_llava.py       # LLaVA 1.5/NeXT prompt formatting
 │   └── prompting_onevision.py   # OneVision prompt formatting

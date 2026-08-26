@@ -18,6 +18,18 @@ Training uses direct Python entry points, one for each supported method and mode
 
 The shared helpers in `training/` are imported by these entry points and are not run directly.
 
+## Attention helper layout
+
+| Module | Used for |
+| --- | --- |
+| `training/attention_alignment.py` | Shared LLaVA-NeXT-style attention capture used by LGG NeXT and DE NeXT/OneVision |
+| `training/attention_utils.py` | Generic token-position and attention-capture helpers |
+| `training/lgg/llava15_attention.py` | LGG LLaVA 1.5 and hook-variant attention helpers |
+| `training/lgg/attention_onevision.py` | LGG OneVision-specific attention and RoPE handling |
+| `training/dual_encoding/attention_llava15.py` | DE LLaVA 1.5-specific attention alignment |
+
+The family-specific implementations remain separate even when some functions look similar, because their module-level dependencies and token-layout assumptions can differ.
+
 ## Input data
 
 Every trainer requires `--train_jsonl` and `--output_dir_name`. Validation data is optional and is passed with `--val_jsonl`.
