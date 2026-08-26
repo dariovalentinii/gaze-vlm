@@ -1,4 +1,4 @@
-"""OneVision prompt formatting and batching."""
+"""Prompt formatting and batching for LLaVA-OneVision."""
 
 from __future__ import annotations
 

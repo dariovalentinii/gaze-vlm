@@ -12,7 +12,7 @@ from transformers import (
 
 from src.models.llava_15 import LlavaHFAdapter
 from src.models.llava_next import LlavaNextHFAdapter
-from src.models.llava_ov import LlavaOnevisionHFAdapter
+from src.models.llava_onevision import LlavaOnevisionHFAdapter
 
 
 def select_model_and_adapter_classes(model_name: str) -> Tuple[Any, Any]:

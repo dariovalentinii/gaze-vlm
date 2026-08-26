@@ -1,3 +1,5 @@
+"""LLaVA-OneVision inference adapter."""
+
 from __future__ import annotations
 from typing import Optional, Dict, Any
 from pathlib import Path

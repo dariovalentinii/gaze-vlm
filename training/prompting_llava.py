@@ -1,4 +1,4 @@
-"""Prompt formatting and batching for LLaVA 1.5 and LLaVA-NeXT."""
+"""Prompt formatting and batching shared by LLaVA 1.5 and LLaVA-NeXT."""
 
 from __future__ import annotations
 

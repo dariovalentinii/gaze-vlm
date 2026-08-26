@@ -61,7 +61,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from training.common import JsonlGazePromptOnly, set_tokenizer_padding
-from training.onevision_prompting import collate_fn
+from training.prompting_onevision import collate_fn
 from training.dual_encoding.common import (
     _heatmap_to_rgb_pil,
     heatmaps_to_rgb_pils,
@@ -91,7 +91,7 @@ from src.data.prompts import PROMPTS_FT
 from src.models.utils import unwrap_to_llava
 from src.models.llava_15 import LlavaHFAdapter
 from src.models.llava_next import LlavaNextHFAdapter
-from src.models.llava_ov import LlavaOnevisionHFAdapter
+from src.models.llava_onevision import LlavaOnevisionHFAdapter
 
 
 # -----------------------

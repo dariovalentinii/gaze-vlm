@@ -48,7 +48,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from training.common import JsonlGazePromptOnly, set_tokenizer_padding
-from training.prompting import collate_fn
+from training.prompting_llava import collate_fn
 from training.dual_encoding.common import (
     _heatmap_to_rgb_pil,
     heatmaps_to_rgb_pils,

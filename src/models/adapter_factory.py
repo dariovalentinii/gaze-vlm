@@ -9,7 +9,7 @@ from src.inference.runner import InferenceAdapter
 # Implemented adapters
 from src.models.llava_15 import LlavaHFAdapter  # LLaVA-1.5 HF class
 from src.models.llava_next import LlavaNextHFAdapter  # LLaVA-1.6 / LLaVA-NeXT
-from src.models.llava_ov import LlavaOnevisionHFAdapter # LLaVA-OV (OneVision) 
+from src.models.llava_onevision import LlavaOnevisionHFAdapter # LLaVA-OV (OneVision)
 
 
 def _resolve_key(model_name: str, model_type: Optional[str]) -> str:
