@@ -1,26 +1,25 @@
 import argparse
 import json
-import os
 import sys
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 import torch
-from PIL import Image
 from tqdm import tqdm
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 
-from src.data.heatmaps import load_heatmap_npy
 from src.data.constants import (
-    COR_LABELS,
-    HEATMAP_EXT,
-    IMAGE_EXT,
-    IMAGE_NUM_END,
-    IMAGE_NUM_START,
     ROOT,
     STRICT_LLAVA_NEXT_BATCH,
 )
+from src.inference.data import (
+    InferenceBatch,
+    InferenceDataset,
+    build_entries,
+    collate_inference,
+    load_entries_from_jsonl,
+    normalize_inference_inputs,
+)
+from src.inference.results import group_outputs_by_cor
 from src.models.adapter_factory import create_inference_adapter
 from src.models.llava_next import LlavaNextHFAdapter
 from src.inference.runner import GenerationConfig, InferenceRunner
@@ -58,260 +57,6 @@ def _resolve_lora_run_dir(lora_dir: str) -> Path:
     )
 
 
-def normalize_inference_inputs(images, heatmaps, cors):
-    is_single = isinstance(images, Image.Image)
-    images = [images] if is_single else images
-    heatmaps = [heatmaps] if is_single else heatmaps
-    cors = [cors] if is_single else cors
-    return images, heatmaps, cors, is_single
-
-
-def build_entries(
-    images_dir: Path,
-    heatmaps_dir: Path,
-    img_num: int = None,
-    cor: str = None,
-) -> list[dict]:
-    entries: list[dict] = []
-    
-    # Single image mode
-    if img_num is not None:
-        image_path = images_dir / f"cogbench_v1_{img_num}.{IMAGE_EXT}"
-        heatmap_path = heatmaps_dir / f"cogbench_v1_{img_num}_{cor}.{HEATMAP_EXT}"
-        entries.append(
-            {
-                "image_path": str(image_path),
-                "heatmap_path": str(heatmap_path),
-                "cor": cor,
-            }
-        )
-    # Batch mode
-    else:
-        for img_num in range(IMAGE_NUM_START, IMAGE_NUM_END + 1):
-            for cor in COR_LABELS:
-                image_path = images_dir / f"cogbench_v1_{img_num}.{IMAGE_EXT}"
-                heatmap_path = heatmaps_dir / f"cogbench_v1_{img_num}_{cor}.{HEATMAP_EXT}"
-                entries.append(
-                    {
-                        "image_path": str(image_path),
-                        "heatmap_path": str(heatmap_path),
-                        "cor": cor,
-                    }
-                )
-    return entries
-
-
-def load_entries_from_jsonl(jsonl_path: Path) -> list[dict]:
-    entries: list[dict] = []
-    with open(jsonl_path, "r") as f_in:
-        for line in f_in:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            image_path = row.get("image_path")
-            heatmap_path = row.get("heatmap_path")
-            cor = row.get("cor")
-            if not image_path or not heatmap_path or not cor:
-                continue
-
-            entries.append(
-                {
-                    "image_path": str(image_path),
-                    "heatmap_path": str(heatmap_path),
-                    "cor": cor,
-                }
-            )
-    return entries
-
-
-@dataclass
-class InferenceBatch:
-    entries: List[Dict[str, Any]]
-    images: List[Image.Image]
-    heatmaps: List[torch.Tensor]
-    cors: List[str]
-    errors: List[Dict[str, Any]]
-
-
-class InferenceDataset(Dataset):
-    def __init__(
-        self,
-        entries: List[Dict[str, Any]],
-        dtype: torch.dtype,
-    ) -> None:
-        self.entries = entries
-        self.dtype = dtype
-
-    def __len__(self) -> int:
-        return len(self.entries)
-
-    def __getitem__(self, idx: int) -> Dict[str, Any]:
-        entry = self.entries[idx]
-        image_path = Path(entry["image_path"])
-        heatmap_path = Path(entry["heatmap_path"])
-
-        missing = []
-        if not image_path.exists():
-            missing.append(f"image_path not found: {image_path}")
-        if not heatmap_path.exists():
-            missing.append(f"heatmap_path not found: {heatmap_path}")
-
-        if missing:
-            return {
-                "entry": entry,
-                "image": None,
-                "heatmap": None,
-                "cor": entry.get("cor"),
-                "error": "; ".join(missing),
-            }
-
-        image = Image.open(image_path).convert("RGB")
-        heatmap = load_heatmap_npy(str(heatmap_path), device="cpu", dtype=self.dtype)
-        return {
-            "entry": entry,
-            "image": image,
-            "heatmap": heatmap,
-            "cor": entry["cor"],
-            "error": None,
-        }
-
-
-def collate_inference(batch: List[Dict[str, Any]]) -> InferenceBatch:
-    entries: List[Dict[str, Any]] = []
-    images: List[Image.Image] = []
-    heatmaps: List[torch.Tensor] = []
-    cors: List[str] = []
-    errors: List[Dict[str, Any]] = []
-
-    for item in batch:
-        if item.get("error"):
-            errors.append(item)
-            continue
-        entries.append(item["entry"])
-        images.append(item["image"])
-        heatmaps.append(item["heatmap"])
-        cors.append(item["cor"])
-
-    return InferenceBatch(
-        entries=entries,
-        images=images,
-        heatmaps=heatmaps,
-        cors=cors,
-        errors=errors,
-    )
-
-
-def group_outputs_by_cor(full_outputs_path: Path) -> None:
-    """
-    Read full_outputs.jsonl and consolidate COR outputs per image.
-    Creates one entry per image with all reasoning outputs as separate fields.
-    """
-    # Mapping from COR labels to field names
-    cor_to_field = {
-        "0_E": "entities_output",
-        "1_STR": "special_time_reasoning_output",
-        "2_LR": "location_reasoning_output",
-        "3_CR": "character_reasoning_output",
-        "4_CRR": "character_relationship_reasoning_output",
-        "5_ER": "event_reasoning_output",
-        "6_ERR": "event_relationship_reasoning_output",
-        "7_NMER": "next_moment_event_reasoning_output",
-        "8_MSR": "mental_state_reasoning_output",
-    }
-    
-    metadata = None
-    prompt_version = None
-    filename_to_outputs: dict[str, dict] = {}
-
-    with open(full_outputs_path, "r") as f_in:
-        for line in f_in:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            # First row with metadata (model)
-            if "model" in row:
-                prompt_version = row.get("prompt_version")
-                if metadata is None:
-                    metadata = row
-                continue
-
-            # Data rows
-            filename = row.get("filename")
-            cor = row.get("cor")
-            model_output = row.get("model_output")
-            if model_output == "":
-                model_output = "None"
-            
-            if not filename or not cor:
-                continue
-
-            # Initialize entry for this filename if needed
-            if filename not in filename_to_outputs:
-                filename_to_outputs[filename] = {"filename": filename}
-            
-            # Map COR to field name and store output
-            field_name = cor_to_field.get(cor)
-            if field_name:
-                filename_to_outputs[filename][field_name] = model_output
-
-    # Write consolidated output (atomic + validated before deleting source)
-    if prompt_version:
-        output_path = full_outputs_path.parent / f"consolidated_{prompt_version}.jsonl"
-    else:
-        output_path = full_outputs_path.parent / "consolidated.jsonl"
-
-    expected_lines = (1 if metadata else 0) + len(filename_to_outputs)
-    tmp_output_path = output_path.with_suffix(output_path.suffix + ".tmp")
-
-    with open(tmp_output_path, "w") as f_out:
-        # Write metadata first
-        if metadata:
-            f_out.write(json.dumps(metadata) + "\n")
-        
-        # Write consolidated entries (sorted by filename for consistency)
-        for filename in sorted(filename_to_outputs.keys()):
-            entry = filename_to_outputs[filename]
-            f_out.write(json.dumps(entry) + "\n")
-        f_out.flush()
-        os.fsync(f_out.fileno())
-
-    # Atomically replace target and validate JSONL integrity
-    os.replace(tmp_output_path, output_path)
-
-    actual_lines = 0
-    with open(output_path, "r") as f_check:
-        for line in f_check:
-            line = line.strip()
-            if not line:
-                continue
-            json.loads(line)  # raises if malformed
-            actual_lines += 1
-
-    if actual_lines != expected_lines:
-        raise RuntimeError(
-            f"Consolidated output validation failed: expected {expected_lines} lines, found {actual_lines}. "
-            f"Source file preserved at {full_outputs_path}."
-        )
-    
-    print(f"Consolidated outputs written to {output_path}")
-
-    # Delete full outputs only after successful write+validation of consolidated file
-    if full_outputs_path.exists():
-        full_outputs_path.unlink()
-        print(f"Deleted source full outputs file: {full_outputs_path}")
-    
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", type=str, default="llava-hf/llava-1.5-7b-hf")
@@ -347,7 +92,7 @@ def main():
     )
     ap.add_argument("--prompt_version", type=str, default="v2", choices=["v1", "v2"],
                     help="Prompt set version to use (v1 or v2)")
-    
+
     ap.add_argument("--batch_size", type=int, default=9,
                     help="Batch size for inference (1 for sequential, >1 for batched)")
     args = ap.parse_args()
@@ -379,7 +124,7 @@ def main():
             img_num=args.img_num,
             cor=args.cor,
         )
-    
+
     # Determine processing mode
     if args.entries_jsonl:
         mode = f"jsonl ({len(entries)} entries)"
@@ -387,7 +132,7 @@ def main():
         mode = f"single ({args.img_num}, {args.cor})"
     else:
         mode = f"all ({len(entries)} combinations)"
-    
+
     print(f"Generated {len(entries)} entries from ranges - processing {mode}")
 
     # Setup model
@@ -426,8 +171,8 @@ def main():
         method_name = "baseline"
     else:
         method_name = {"lgg": "lgg", "de": "dual_encoding"}[args.method]
-        
-    
+
+
 
     # Prepare output file
     output_root = Path(args.output_dir).resolve()
@@ -525,7 +270,7 @@ def main():
     print(f"Processed {len(entries)} entries")
 
     group_outputs_by_cor(output_path)
-    
+
 
 
 if __name__ == "__main__":

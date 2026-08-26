@@ -49,7 +49,10 @@ training/lgg/ or training/dual_encoding/
 ├── src/
 │   ├── data/                    # prompts and heatmap processing
 │   ├── models/                  # existing LLaVA adapters
-│   └── inference/               # shared inference protocol and runner
+│   └── inference/
+│       ├── data.py              # inference entries, dataset, and batching
+│       ├── results.py           # JSONL consolidation
+│       └── runner.py            # shared inference protocol and runner
 ├── training/
 │   ├── lgg/                     # LGG trainers and shared LGG helpers
 │   ├── dual_encoding/           # DE trainers and shared DE helpers
