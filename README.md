@@ -145,20 +145,18 @@ Choose the trainer that matches the method and model family:
 
 | Method | Model family | Script |
 | --- | --- | --- |
-| LGG | LLaVA 1.5 7B | `training/lgg/train_llava_15_7b.py` |
-| LGG | LLaVA 1.5 13B | `training/lgg/train_llava_15_13b.py` |
+| LGG | LLaVA 1.5 7B/13B | `training/lgg/train_llava_15.py` |
 | LGG | LLaVA-NeXT 7B/13B | `training/lgg/train_llava_next.py` |
 | LGG | LLaVA-NeXT hook variant | `training/lgg/train_llava_next_with_hooks.py` |
 | LGG | LLaVA-OneVision | `training/lgg/train_llava_onevision.py` |
 | DE | LLaVA 1.5 7B/13B | `training/dual_encoding/train_llava_15.py` |
-| DE | LLaVA-NeXT 7B | `training/dual_encoding/train_llava_next_7b.py` |
-| DE | LLaVA-NeXT 13B | `training/dual_encoding/train_llava_next_13b.py` |
+| DE | LLaVA-NeXT 7B/13B | `training/dual_encoding/train_llava_next.py` |
 | DE | LLaVA-OneVision | `training/dual_encoding/train_llava_onevision.py` |
 
 Minimal LGG example:
 
 ```bash
-python training/lgg/train_llava_15_7b.py \
+python training/lgg/train_llava_15.py \
   --model llava-hf/llava-1.5-7b-hf \
   --train_jsonl /path/to/train.jsonl \
   --output_dir_name my_run

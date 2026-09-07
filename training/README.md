@@ -34,31 +34,31 @@ Paths are interpreted relative to the directory from which the trainer is launch
 
 ## Choose a trainer and backbone
 
-Each specialized trainer now defaults to the matching backbone. The shared LLaVA-NeXT LGG trainer and the shared LLaVA 1.5 DE trainer default to their respective 7B models; pass `--model` explicitly to select 13B or to make a run configuration self-documenting.
+Each family-specific trainer defaults to its 7B backbone. Pass `--model` explicitly to select the 13B variant or to make a run configuration self-documenting.
 
 | Method | Backbone | Hugging Face model | Trainer |
 | --- | --- | --- | --- |
-| LGG | LLaVA 1.5 7B | `llava-hf/llava-1.5-7b-hf` | `training/lgg/train_llava_15_7b.py` |
-| LGG | LLaVA 1.5 13B | `llava-hf/llava-1.5-13b-hf` | `training/lgg/train_llava_15_13b.py` |
+| LGG | LLaVA 1.5 7B | `llava-hf/llava-1.5-7b-hf` | `training/lgg/train_llava_15.py` |
+| LGG | LLaVA 1.5 13B | `llava-hf/llava-1.5-13b-hf` | `training/lgg/train_llava_15.py` |
 | LGG | LLaVA-NeXT 7B | `llava-hf/llava-v1.6-vicuna-7b-hf` | `training/lgg/train_llava_next.py` |
 | LGG | LLaVA-NeXT 13B | `llava-hf/llava-v1.6-vicuna-13b-hf` | `training/lgg/train_llava_next.py` |
 | LGG | LLaVA-OneVision 7B Chat | `llava-hf/llava-onevision-qwen2-7b-ov-chat-hf` | `training/lgg/train_llava_onevision.py` |
 | DE | LLaVA 1.5 7B | `llava-hf/llava-1.5-7b-hf` | `training/dual_encoding/train_llava_15.py` |
 | DE | LLaVA 1.5 13B | `llava-hf/llava-1.5-13b-hf` | `training/dual_encoding/train_llava_15.py` |
-| DE | LLaVA-NeXT 7B | `llava-hf/llava-v1.6-vicuna-7b-hf` | `training/dual_encoding/train_llava_next_7b.py` |
-| DE | LLaVA-NeXT 13B | `llava-hf/llava-v1.6-vicuna-13b-hf` | `training/dual_encoding/train_llava_next_13b.py` |
+| DE | LLaVA-NeXT 7B | `llava-hf/llava-v1.6-vicuna-7b-hf` | `training/dual_encoding/train_llava_next.py` |
+| DE | LLaVA-NeXT 13B | `llava-hf/llava-v1.6-vicuna-13b-hf` | `training/dual_encoding/train_llava_next.py` |
 | DE | LLaVA-OneVision 7B Chat | `llava-hf/llava-onevision-qwen2-7b-ov-chat-hf` | `training/dual_encoding/train_llava_onevision.py` |
 
 For LGG with LLaVA-NeXT, `training/lgg/train_llava_next.py` is the primary trainer. `training/lgg/train_llava_next_with_hooks.py` retains an alternative last-layer attention-hook implementation and should only be selected when that specific implementation is required.
 
-The two LGG LLaVA 1.5 trainers are not interchangeable copies: the 7B entry point additionally supports `--attn_layer_start` and `--attn_layer_end`, while the 13B entry point selects attention using `--attn_last_layers`. The two DE LLaVA-NeXT trainers also differ: the 13B entry point writes periodic `step_<update>` checkpoints according to `--save_every`, whereas the 7B entry point saves the final run artifacts only.
+The shared LGG LLaVA 1.5 trainer supports both `--attn_last_layers` and the optional `--attn_layer_start`/`--attn_layer_end` slice. The shared DE LLaVA-NeXT trainer writes periodic `step_<update>` checkpoints according to `--save_every` for both model sizes.
 
 ## Training commands
 
 LGG trains the gaze injector. Add `--train_projector_lora` to train a LoRA adapter on the multimodal projector, as in the paper configuration:
 
 ```bash
-python training/lgg/train_llava_15_7b.py \
+python training/lgg/train_llava_15.py \
   --model llava-hf/llava-1.5-7b-hf \
   --train_jsonl /path/to/train.jsonl \
   --val_jsonl /path/to/val.jsonl \
@@ -93,7 +93,7 @@ The loss combines three terms:
 Attention alignment supports `kl`, `mse`, and `ce` through `--loss`. The default values are defined by each trainer and are shown by running:
 
 ```bash
-python training/lgg/train_llava_15_7b.py --help
+python training/lgg/train_llava_15.py --help
 ```
 
 ## Common options
@@ -106,6 +106,8 @@ python training/lgg/train_llava_15_7b.py --help
 | `--dtype` | `float16`, `bfloat16`, or `float32`. |
 | `--grad_ckpt` | Enables gradient checkpointing. |
 | `--attn_last_layers` | Number of final language-model layers used for attention alignment. |
+| `--attn_layer_start` / `--attn_layer_end` | Optional Python-style attention-layer slice in the LGG LLaVA 1.5 trainer. |
+| `--save_every` | Number of optimizer updates between periodic DE LLaVA-NeXT checkpoints. |
 | `--p_no_gaze` | Probability of disabling gaze for a batch as regularization. |
 | `--init_lora_dir` | Initializes the projector LoRA from an existing adapter. |
 | `--init_heatmap_lora_dir` | Initializes the DE heatmap-encoder LoRA from an existing adapter. |

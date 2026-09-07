@@ -40,7 +40,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from PIL import Image
 from torch import nn
 from torch.utils.data import Dataset, DataLoader, ConcatDataset
@@ -66,11 +65,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from training.data import JsonlGazePromptOnly, set_tokenizer_padding
 from training.prompting_llava import collate_fn
 from training.modeling import select_model_and_adapter_classes
-from training.lgg.llava15_attention import (
-    _find_longest_run_positions,
-    attention_alignment_loss,
-    infer_image_token_positions_per_sample,
-)
+from training.lgg.llava15_attention import attention_alignment_loss
 from training.lgg.common import (
     build_per_sample_gaze_targets,
     distill_kl_loss,
@@ -86,27 +81,13 @@ from src.models.llava_onevision import LlavaOnevisionHFAdapter
 
 
 # -----------------------
-# Attention alignment
-# -----------------------
-
-
-
-
-
-
-
-
-
-
-
-# -----------------------
 # Main
 # -----------------------
 
 def main() -> None:
     ap = argparse.ArgumentParser()
 
-    ap.add_argument("--model", type=str, default="llava-hf/llava-1.5-13b-hf")
+    ap.add_argument("--model", type=str, default="llava-hf/llava-1.5-7b-hf")
     ap.add_argument("--train_jsonl", type=str, required=True, help="Comma-separated JSONL paths")
     ap.add_argument("--val_jsonl", type=str, default=None, help="Comma-separated JSONL paths (optional)")
     ap.add_argument("--output_dir_name", type=str, required=True)
@@ -129,6 +110,18 @@ def main() -> None:
     # Attention alignment
     ap.add_argument("--loss", type=str, default="kl", choices=["kl", "mse", "ce"])
     ap.add_argument("--attn_last_layers", type=int, default=1, help="Use the last K LLM layers' attentions")
+    ap.add_argument(
+        "--attn_layer_start",
+        type=int,
+        default=None,
+        help="Start index for attention layers slice (inclusive). Uses Python slicing and supports negative indices.",
+    )
+    ap.add_argument(
+        "--attn_layer_end",
+        type=int,
+        default=None,
+        help="End index for attention layers slice (exclusive). Uses Python slicing and supports negative indices.",
+    )
     
     # Mix objectives (mitigate nonsense outputs)
     ap.add_argument("--lambda_attn", type=float, default=0.05, help="Weight for attention-alignment loss.")
@@ -384,6 +377,8 @@ def main() -> None:
                     "objective": "attention_alignment",
                     "loss": args.loss,
                     "attn_last_layers": args.attn_last_layers,
+                    "attn_layer_start": args.attn_layer_start,
+                    "attn_layer_end": args.attn_layer_end,
                     "train_projector_lora": bool(args.train_projector_lora),
                     "injector": {
                         "type": "affine_sigmoid",
@@ -469,6 +464,8 @@ def main() -> None:
             gaze_probs=gaze_target,
             image_token_id=int(image_token_id),
             num_last_layers=args.attn_last_layers,
+            layer_start=args.attn_layer_start,
+            layer_end=args.attn_layer_end,
             loss_type=args.loss,
         )
         

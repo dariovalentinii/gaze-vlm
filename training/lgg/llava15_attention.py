@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -81,6 +81,8 @@ def attention_alignment_loss(
     gaze_probs: torch.Tensor,
     image_token_id: int,
     num_last_layers: int = 1,
+    layer_start: Optional[int] = None,
+    layer_end: Optional[int] = None,
     eps: float = 1e-8,
     loss_type: str = "kl",
 ) -> torch.Tensor:
@@ -90,7 +92,9 @@ def attention_alignment_loss(
     gaze_probs: [B, N] (already normalized to sum=1)
 
     We use attention from the last valid token (q_idx) to image token positions.
-    We average over heads and over the last `num_last_layers` layers.
+    When layer_start or layer_end is set, the corresponding Python slice is used.
+    Otherwise, the final num_last_layers layers are used. Attention is averaged
+    over heads and the selected layers.
     """
     if len(attentions) == 0:
         raise RuntimeError("Model did not return attentions. Ensure output_attentions=True.")
@@ -98,7 +102,15 @@ def attention_alignment_loss(
     B = input_ids.shape[0]
     N = gaze_probs.shape[1]
 
-    use_layers = attentions[-num_last_layers:]
+    if layer_start is not None or layer_end is not None:
+        use_layers = attentions[layer_start:layer_end]
+        if len(use_layers) == 0:
+            raise ValueError(
+                f"Empty attention layer selection: start={layer_start}, end={layer_end}, "
+                f"num_layers={len(attentions)}."
+            )
+    else:
+        use_layers = attentions[-num_last_layers:]
 
     # Accumulate per-layer attention distributions over image tokens.
     attn_img_sum = None
