@@ -34,7 +34,7 @@ Paths are interpreted relative to the directory from which the trainer is launch
 
 ## Choose a trainer and backbone
 
-Always pass `--model` explicitly. The scripts currently retain LLaVA 1.5 7B as their command-line default, including the NeXT and OneVision trainers.
+Each specialized trainer now defaults to the matching backbone. The shared LLaVA-NeXT LGG trainer and the shared LLaVA 1.5 DE trainer default to their respective 7B models; pass `--model` explicitly to select 13B or to make a run configuration self-documenting.
 
 | Method | Backbone | Hugging Face model | Trainer |
 | --- | --- | --- | --- |
@@ -50,6 +50,8 @@ Always pass `--model` explicitly. The scripts currently retain LLaVA 1.5 7B as t
 | DE | LLaVA-OneVision 7B Chat | `llava-hf/llava-onevision-qwen2-7b-ov-chat-hf` | `training/dual_encoding/train_llava_onevision.py` |
 
 For LGG with LLaVA-NeXT, `training/lgg/train_llava_next.py` is the primary trainer. `training/lgg/train_llava_next_with_hooks.py` retains an alternative last-layer attention-hook implementation and should only be selected when that specific implementation is required.
+
+The two LGG LLaVA 1.5 trainers are not interchangeable copies: the 7B entry point additionally supports `--attn_layer_start` and `--attn_layer_end`, while the 13B entry point selects attention using `--attn_last_layers`. The two DE LLaVA-NeXT trainers also differ: the 13B entry point writes periodic `step_<update>` checkpoints according to `--save_every`, whereas the 7B entry point saves the final run artifacts only.
 
 ## Training commands
 

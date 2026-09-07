@@ -107,7 +107,7 @@ from training.lgg.attention_capture import LastKAttnCapture
 def main() -> None:
     ap = argparse.ArgumentParser()
 
-    ap.add_argument("--model", type=str, default="llava-hf/llava-1.5-7b-hf")
+    ap.add_argument("--model", type=str, default="llava-hf/llava-v1.6-vicuna-7b-hf")
     ap.add_argument("--train_jsonl", type=str, required=True, help="Comma-separated JSONL paths")
     ap.add_argument("--val_jsonl", type=str, default=None, help="Comma-separated JSONL paths (optional)")
     ap.add_argument("--output_dir_name", type=str, required=True)
