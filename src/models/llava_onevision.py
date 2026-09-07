@@ -266,15 +266,19 @@ class LlavaOnevisionHFAdapter:
     def generate_with_weighted_patches(
         self,
         images: list[Image.Image],
-        heatmaps: list[torch.Tensor],
+        heatmaps: Optional[list[torch.Tensor]],
         cfg: GenerationConfig,
         *,
         cors: list[str],
         use_vision_hook: bool = True,
     ) -> list[str]:
         B = len(images)
-        assert len(heatmaps) == B
         assert len(cors) == B
+
+        if use_vision_hook:
+            if heatmaps is None:
+                raise ValueError("Heatmaps are required when gaze injection is enabled.")
+            assert len(heatmaps) == B
         
         use_dual_encoding = use_vision_hook and (self.dual_encoding_injector is not None) and (self.heatmap_encoder is not None)
 

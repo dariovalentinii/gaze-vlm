@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import List, Protocol
+from typing import List, Optional, Protocol
 from PIL import Image
 import torch
 
@@ -12,7 +12,7 @@ class InferenceAdapter(Protocol):
     def generate_with_weighted_patches(
         self,
         images: List[Image.Image],
-        heatmaps: List[torch.Tensor],
+        heatmaps: Optional[List[torch.Tensor]],
         cfg: "GenerationConfig",
         *,
         cors: List[str],
@@ -36,7 +36,7 @@ class InferenceRunner:
         self,
         adapter: InferenceAdapter,
         images: List[Image.Image],
-        heatmaps: List[torch.Tensor],
+        heatmaps: Optional[List[torch.Tensor]],
         *,
         cors: List[str],
         use_vision_hook: bool = True,

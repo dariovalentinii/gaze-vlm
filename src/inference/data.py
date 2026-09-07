@@ -3,7 +3,7 @@
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import torch
 from PIL import Image
@@ -62,7 +62,11 @@ def build_entries(
     return entries
 
 
-def load_entries_from_jsonl(jsonl_path: Path) -> list[dict]:
+def load_entries_from_jsonl(
+    jsonl_path: Path,
+    require_heatmap: bool = True,
+) -> list[dict]:
+    """Load inference entries, allowing Baseline records to omit heatmap_path."""
     entries: list[dict] = []
     with open(jsonl_path, "r") as f_in:
         for line in f_in:
@@ -77,16 +81,16 @@ def load_entries_from_jsonl(jsonl_path: Path) -> list[dict]:
             image_path = row.get("image_path")
             heatmap_path = row.get("heatmap_path")
             cor = row.get("cor")
-            if not image_path or not heatmap_path or not cor:
+            if not image_path or not cor or (require_heatmap and not heatmap_path):
                 continue
 
-            entries.append(
-                {
-                    "image_path": str(image_path),
-                    "heatmap_path": str(heatmap_path),
-                    "cor": cor,
-                }
-            )
+            entry = {
+                "image_path": str(image_path),
+                "cor": cor,
+            }
+            if heatmap_path:
+                entry["heatmap_path"] = str(heatmap_path)
+            entries.append(entry)
     return entries
 
 
@@ -94,7 +98,7 @@ def load_entries_from_jsonl(jsonl_path: Path) -> list[dict]:
 class InferenceBatch:
     entries: List[Dict[str, Any]]
     images: List[Image.Image]
-    heatmaps: List[torch.Tensor]
+    heatmaps: Optional[List[torch.Tensor]]
     cors: List[str]
     errors: List[Dict[str, Any]]
 
@@ -104,9 +108,11 @@ class InferenceDataset(Dataset):
         self,
         entries: List[Dict[str, Any]],
         dtype: torch.dtype,
+        load_heatmaps: bool = True,
     ) -> None:
         self.entries = entries
         self.dtype = dtype
+        self.load_heatmaps = load_heatmaps
 
     def __len__(self) -> int:
         return len(self.entries)
@@ -114,12 +120,16 @@ class InferenceDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         entry = self.entries[idx]
         image_path = Path(entry["image_path"])
-        heatmap_path = Path(entry["heatmap_path"])
+        heatmap_path = None
+        if self.load_heatmaps and entry.get("heatmap_path"):
+            heatmap_path = Path(entry["heatmap_path"])
 
         missing = []
         if not image_path.exists():
             missing.append(f"image_path not found: {image_path}")
-        if not heatmap_path.exists():
+        if self.load_heatmaps and heatmap_path is None:
+            missing.append("heatmap_path missing")
+        elif heatmap_path is not None and not heatmap_path.exists():
             missing.append(f"heatmap_path not found: {heatmap_path}")
 
         if missing:
@@ -132,7 +142,9 @@ class InferenceDataset(Dataset):
             }
 
         image = Image.open(image_path).convert("RGB")
-        heatmap = load_heatmap_npy(str(heatmap_path), device="cpu", dtype=self.dtype)
+        heatmap = None
+        if heatmap_path is not None:
+            heatmap = load_heatmap_npy(str(heatmap_path), device="cpu", dtype=self.dtype)
         return {
             "entry": entry,
             "image": image,
@@ -145,7 +157,7 @@ class InferenceDataset(Dataset):
 def collate_inference(batch: List[Dict[str, Any]]) -> InferenceBatch:
     entries: List[Dict[str, Any]] = []
     images: List[Image.Image] = []
-    heatmaps: List[torch.Tensor] = []
+    heatmaps: Optional[List[torch.Tensor]] = []
     cors: List[str] = []
     errors: List[Dict[str, Any]] = []
 
@@ -155,7 +167,10 @@ def collate_inference(batch: List[Dict[str, Any]]) -> InferenceBatch:
             continue
         entries.append(item["entry"])
         images.append(item["image"])
-        heatmaps.append(item["heatmap"])
+        if item["heatmap"] is None:
+            heatmaps = None
+        elif heatmaps is not None:
+            heatmaps.append(item["heatmap"])
         cors.append(item["cor"])
 
     return InferenceBatch(

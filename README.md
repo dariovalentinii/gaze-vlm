@@ -106,11 +106,12 @@ Baseline:
 python run_batch_inference.py \
   --model llava-hf/llava-1.5-7b-hf \
   --images_dir /path/to/images \
-  --heatmaps_dir /path/to/heatmaps \
   --no_gaze
 ```
 
-For compatibility with the gaze-enabled data pipeline, baseline loading still expects the heatmap files even though gaze injection is disabled.
+Baseline inference does not load or require gaze heatmaps. It still runs the nine CogBench prompts for each image because the `cor` labels select the evaluation dimension independently of gaze.
+
+When `--entries_jsonl` is used for Baseline, each record only needs `image_path` and `cor`; `heatmap_path` remains required for LGG and DE.
 
 Learnable Gaze Gating:
 

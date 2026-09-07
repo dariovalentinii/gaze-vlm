@@ -65,9 +65,9 @@ def main():
     ap.add_argument("--images_dir", type=str, default=str(ROOT / "data" / "cogbench_v1-1" / "images"),
                     help="Absolute path to images directory")
     ap.add_argument("--heatmaps_dir", type=str, default=str(ROOT / "data" / "heatmaps" / "avg"),
-                    help="Absolute path to heatmaps directory")
+                    help="Absolute path to heatmaps directory (used by LGG/DE; ignored by Baseline)")
     ap.add_argument("--entries_jsonl", type=str, default=None,
-                    help="Path to JSONL entries (image_path, heatmap_path, cor). Overrides image/heatmap ranges.")
+                    help="Path to JSONL entries (image_path, cor, and heatmap_path for LGG/DE). Overrides image/heatmap ranges.")
     ap.add_argument("--output_dir", type=str, default=str(ROOT / "results"),
                     help="Output directory for JSONL files")
     ap.add_argument("--img_num", type=int, default=None,
@@ -113,8 +113,13 @@ def main():
         print("Error: --lora_dir is required for LGG or DE")
         sys.exit(1)
 
+    load_heatmaps = not args.no_gaze
+
     if args.entries_jsonl:
-        entries = load_entries_from_jsonl(Path(args.entries_jsonl).resolve())
+        entries = load_entries_from_jsonl(
+            Path(args.entries_jsonl).resolve(),
+            require_heatmap=load_heatmaps,
+        )
     else:
         images_dir = Path(args.images_dir).resolve()
         heatmaps_dir = Path(args.heatmaps_dir).resolve()
@@ -204,7 +209,11 @@ def main():
 
     # Process entries in batches (DataLoader)
     print(f"Starting inference with batch_size={args.batch_size}...")
-    dataset = InferenceDataset(entries, dtype=dtype_map[args.dtype])
+    dataset = InferenceDataset(
+        entries,
+        dtype=dtype_map[args.dtype],
+        load_heatmaps=load_heatmaps,
+    )
     dataloader = DataLoader(
         dataset,
         batch_size=args.batch_size,

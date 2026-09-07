@@ -242,7 +242,7 @@ class LlavaHFAdapter:
     def generate_with_weighted_patches(
         self,
         images: list[Image.Image],
-        heatmaps: list[torch.Tensor],
+        heatmaps: Optional[list[torch.Tensor]],
         cfg: GenerationConfig,
         *,
         cors: list[str],
@@ -258,7 +258,7 @@ class LlavaHFAdapter:
           
         Args:
             images: List of PIL images [B]
-            heatmaps: List of heatmap tensors, each [1,1,H,W] [B]
+            heatmaps: List of heatmap tensors, each [1,1,H,W] [B], or None for Baseline
             cfg: Configuration
             cors: List of COR labels [B]
             use_vision_hook: Whether to apply gaze-weighted patch hook
@@ -267,8 +267,12 @@ class LlavaHFAdapter:
             List of generated texts [B]
         """
         B = len(images)
-        assert len(heatmaps) == B
         assert len(cors) == B
+
+        if use_vision_hook:
+            if heatmaps is None:
+                raise ValueError("Heatmaps are required when gaze injection is enabled.")
+            assert len(heatmaps) == B
 
         use_dual_encoding = use_vision_hook and (self.dual_encoding_injector is not None) and (self.heatmap_encoder is not None)
 
