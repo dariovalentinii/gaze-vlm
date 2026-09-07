@@ -1,14 +1,20 @@
 # Gaze-VLM
 
-Gaze-conditioned inference and fine-tuning for CogBench with LLaVA-family vision-language models.
+Code accompanying the paper **“Impact of Architecture and Integration Strategy on Gaze-Augmented Visual Reasoning in VLMs”** by Dario Valentini, Matteo Moro, Vittorio Murino, and Lucia Schiatti.
 
-This repository contains three supported methods:
+Gaze-VLM investigates how task-dependent human gaze can be integrated into open-source LLaVA-family vision-language models. The repository supports training, inference, and CogBench evaluation for a no-gaze baseline and two gaze-integration methods. The paper evaluates whether their effect depends on the model architecture and on the distinction between visual recognition and higher-level reasoning.
 
-- **Baseline**: standard inference without gaze injection.
-- **Learnable Gaze Gating (LGG)**: a learned affine-sigmoid gate weights visual patch features from gaze heatmaps.
-- **Dual Encoding (DE)**: a separate vision encoder embeds the heatmap before gaze gating.
+## Methods
 
-The refactor preserves the existing model computations, training losses, adapter behavior, and checkpoint contents. The public inference entry point selects gaze methods by name: `--method lgg` or `--method de`.
+| Method | Gaze integration |
+| --- | --- |
+| **Baseline** | Runs the original model without gaze injection. |
+| **Learnable Gaze Gating (LGG)** | Resizes each heatmap to the visual patch grid and learns an affine-sigmoid gate that modulates the image patch embeddings. |
+| **Dual Encoding (DE)** | Encodes the heatmap with a separate vision encoder and maps its patch embeddings to learned gates for the image features. |
+
+The experiments cover LLaVA 1.5 (7B and 13B), LLaVA-NeXT/LLaVA 1.6 (7B and 13B), and LLaVA-OneVision (7B Chat). The current public workflow focuses on Baseline, LGG, and DE.
+
+The paper finds that gaze primarily affects higher-level reasoning rather than entity recognition, and that the most effective integration strategy is architecture-dependent: LGG is better suited to the evaluated LLaVA 1.5 and LLaVA-NeXT models, while DE is more effective for LLaVA-OneVision cognition.
 
 ## Which file should I run?
 
@@ -17,59 +23,10 @@ The refactor preserves the existing model computations, training losses, adapter
 | Run Baseline, LGG, or DE inference | `run_batch_inference.py` |
 | Train LGG | A model-specific script in `training/lgg/` |
 | Train DE | A model-specific script in `training/dual_encoding/` |
-| Evaluate an existing inference JSONL | `evaluation/run_all_eval.py` |
+| Evaluate an inference JSONL | `evaluation/run_all_eval.py` |
 | Run inference and evaluation together | `scripts/infer_and_eval.py` |
 
-See the [training guide](training/README.md) to choose a trainer and the [evaluation guide](evaluation/README.md) for the complete scoring pipeline.
-
-### Inference and evaluation flow
-
-```text
-run_batch_inference.py
-    -> src/models/adapter_factory.py
-    -> model-family adapter in src/models/
-    -> src/inference/runner.py
-    -> results/<method>/<model>/.../consolidated_<prompt_version>.jsonl
-    -> evaluation/run_all_eval.py
-```
-
-LGG and DE training produce a run directory that is passed to inference with `--lora_dir`:
-
-```text
-training/lgg/ or training/dual_encoding/
-    -> <model>/<run_name>/
-    -> run_batch_inference.py --lora_dir <model>/<run_name>/
-```
-
-## Repository layout
-
-```text
-.
-├── run_batch_inference.py       # baseline, LGG, and DE inference
-├── src/
-│   ├── data/                    # prompts and heatmap processing
-│   ├── models/
-│   │   ├── llava_*.py           # model-family inference adapters
-│   │   ├── checkpoint_utils.py  # shared checkpoint loading helpers
-│   │   └── unwrapping.py        # access through optional model wrappers
-│   └── inference/
-│       ├── data.py              # inference entries, dataset, and batching
-│       ├── results.py           # JSONL consolidation
-│       └── runner.py            # shared inference protocol and runner
-├── training/
-│   ├── data.py                  # shared training dataset and input structures
-│   ├── lgg/                     # LGG trainers, attention, and capture helpers
-│   ├── dual_encoding/           # DE trainers, encoder, and objectives
-│   ├── attention_alignment.py   # shared LLaVA-NeXT-style attention logic
-│   ├── attention_positions.py   # shared image-token position helper
-│   ├── modeling.py              # shared model/adapter selection
-│   ├── prompting_llava.py       # LLaVA 1.5/NeXT prompt formatting
-│   └── prompting_onevision.py   # OneVision prompt formatting
-├── evaluation/                  # CogBench evaluation pipeline
-└── scripts/                     # convenience entry points
-```
-
-Datasets, experiment outputs, logs, adapters, and checkpoints are intentionally not versioned.
+See the [training guide](training/README.md) to select a trainer and the [evaluation guide](evaluation/README.md) for the complete scoring pipeline.
 
 ## Installation
 
@@ -82,36 +39,66 @@ pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 ```
 
-The evaluation pipeline uses Gemini for cognition scoring. Provide the key through the environment rather than source code:
+The cognition evaluation uses Gemini 2.5 Flash. Provide the API key through the environment rather than source code:
 
 ```bash
 export GEMINI_API_KEY="..."
 ```
 
-The project root is detected automatically. `GAZE_VLM_ROOT` can override it when data is stored relative to another root.
+The project root is detected automatically. Set `GAZE_VLM_ROOT` only if the data directories should be resolved relative to a different root.
 
 ## Data
 
-Inference expects CogBench images and NumPy heatmaps. The default layout is:
+The datasets are not redistributed in this repository.
+
+### CogBench images and annotations
+
+Obtain the CogBench images and annotations directly from the [official CogBench repository](https://github.com/X-LANCE/CogBench) by following its data-access instructions. CogBench requires users to accept its Data Use Agreement; this repository does not mirror or replace the original dataset distribution.
+
+### Gaze heatmaps
+
+The task-dependent CogBench gaze heatmaps used by this project are available in this [Google Drive folder](https://drive.google.com/drive/u/0/folders/1HkC8yg4Ev7NnAkOedp8Yk73RHv7hQSi9). They were collected in an eye-tracking study with 30 participants and averaged across three observers for each image-task pair.
+
+Place the downloaded files in the following default layout, or pass custom paths through the command-line arguments:
 
 ```text
 data/
 ├── cogbench_v1-1/
 │   ├── images/
+│   │   ├── cogbench_v1_1.jpg
+│   │   └── ...
 │   └── cogbench_v1_description.json
 └── heatmaps/
     └── avg/
+        ├── cogbench_v1_1_0_E.npy
+        └── ...
 ```
 
-Training consumes JSONL records with `image_path`, `heatmap_path`, and either `prompt` or `cor`:
+Each image has nine task-dependent heatmaps. Their filename labels correspond to the following CogBench dimensions:
+
+| Label | Dimension |
+| --- | --- |
+| `0_E` | Entity recognition |
+| `1_STR` | Special Time |
+| `2_LR` | Location |
+| `3_CR` | Character |
+| `4_CRR` | Character Relationship |
+| `5_ER` | Event |
+| `6_ERR` | Event Relationship |
+| `7_NMER` | Next Moment Event |
+| `8_MSR` | Mental State |
+
+The experiments in the paper use CapGaze for training and reserve CogBench for evaluation. Training scripts consume JSONL records with `image_path`, `heatmap_path`, and either `prompt` or `cor`:
 
 ```json
-{"image_path":"/path/image.jpg","heatmap_path":"/path/heatmap.npy","cor":"0_E"}
+{"image_path":"/path/to/image.jpg","heatmap_path":"/path/to/heatmap.npy","cor":"0_E"}
 ```
 
-Multiple training or validation files can be passed as comma-separated paths.
+Multiple training or validation files can be passed as comma-separated paths. Dataset files, experiment outputs, logs, adapters, and checkpoints are intentionally excluded from version control.
 
 ## Inference
+
+Run commands from the repository root. Select exactly one of `--no_gaze` or `--method {lgg,de}`.
 
 Baseline:
 
@@ -123,9 +110,9 @@ python run_batch_inference.py \
   --no_gaze
 ```
 
-For parity with the original implementation, baseline data loading still expects heatmap files even though the vision hook is disabled.
+For compatibility with the gaze-enabled data pipeline, baseline loading still expects the heatmap files even though gaze injection is disabled.
 
-LGG:
+Learnable Gaze Gating:
 
 ```bash
 python run_batch_inference.py \
@@ -147,13 +134,11 @@ python run_batch_inference.py \
   --lora_dir training/dual_encoding/llava-1.5-7b-hf/my_run
 ```
 
-Checkpoints stored in earlier directory layouts remain accepted.
-
-Outputs are written below `results/baseline`, `results/lgg`, or `results/dual_encoding`. Each run first writes `full_<prompt_version>.jsonl` and then consolidates it into `consolidated_<prompt_version>.jsonl`.
+Earlier compatible checkpoint layouts remain accepted. Outputs are written below `results/baseline`, `results/lgg`, or `results/dual_encoding`. Each run first writes `full_<prompt_version>.jsonl` and then produces `consolidated_<prompt_version>.jsonl`.
 
 ## Training
 
-For trainer selection, inputs, outputs, and minimal commands, see [training/README.md](training/README.md).
+The [training guide](training/README.md) documents input records, generated artifacts, model-specific options, and minimal commands.
 
 Choose the trainer that matches the method and model family:
 
@@ -169,40 +154,39 @@ Choose the trainer that matches the method and model family:
 | DE | LLaVA-NeXT 13B | `training/dual_encoding/train_llava_next_13b.py` |
 | DE | LLaVA-OneVision | `training/dual_encoding/train_llava_onevision.py` |
 
-Example LGG training command:
+Minimal LGG example:
 
 ```bash
 python training/lgg/train_llava_15_7b.py \
   --model llava-hf/llava-1.5-7b-hf \
   --train_jsonl /path/to/train.jsonl \
-  --val_jsonl /path/to/val.jsonl \
-  --output_dir_name my_run \
-  --train_projector_lora \
-  --batch_size 1 \
-  --grad_accum 16 \
-  --epochs 1
+  --output_dir_name my_run
 ```
 
-Example Dual Encoding training command:
+Minimal DE example:
 
 ```bash
 python training/dual_encoding/train_llava_15.py \
   --model llava-hf/llava-1.5-7b-hf \
   --train_jsonl /path/to/train.jsonl \
-  --val_jsonl /path/to/val.jsonl \
-  --output_dir_name my_run \
-  --train_projector_lora \
-  --train_heatmap_encoder_lora \
-  --batch_size 1 \
-  --grad_accum 16 \
-  --epochs 1
+  --output_dir_name my_run
 ```
 
-Training artifacts are stored below the selected method and model, for example `training/lgg/llava-1.5-7b-hf/my_run`.
+Each run is stored below the selected method and model, for example `training/lgg/llava-1.5-7b-hf/my_run`. Pass that complete directory to inference with `--lora_dir`.
 
 ## Evaluation
 
-For the execution order, input/output files, and Gemini configuration, see [evaluation/README.md](evaluation/README.md).
+The evaluation follows CogBench's description task and reports recognition and dimension-specific cognition scores. `evaluation/run_all_eval.py` applies the scoring steps in the required order:
+
+```text
+consolidated_<prompt_version>.jsonl
+    -> recognition_score.py
+    -> cognition_gpt_eval.py (Gemini 2.5 Flash)
+    -> cognition_score.py
+    -> scores_<prompt_version>.json
+```
+
+Run the complete evaluation with:
 
 ```bash
 python evaluation/run_all_eval.py \
@@ -210,4 +194,55 @@ python evaluation/run_all_eval.py \
   --cogbench_description_file_path /path/to/cogbench_v1_description.json
 ```
 
-No license has been selected yet. Add one before making the repository public.
+See [evaluation/README.md](evaluation/README.md) for the expected input format, generated files, and combined inference/evaluation command.
+
+## Repository layout
+
+```text
+.
+├── run_batch_inference.py       # Baseline, LGG, and DE inference
+├── src/
+│   ├── data/                    # prompts and heatmap processing
+│   ├── inference/               # datasets, batching, runner, and results
+│   └── models/                  # model-family inference adapters
+├── training/
+│   ├── lgg/                     # LGG trainers and attention helpers
+│   ├── dual_encoding/           # DE trainers, encoder, and objectives
+│   └── *.py                     # shared training utilities
+├── evaluation/                  # CogBench evaluation pipeline
+└── scripts/                     # convenience entry points
+```
+
+### Execution flow
+
+```text
+run_batch_inference.py
+    -> src/models/adapter_factory.py
+    -> model-family adapter in src/models/
+    -> src/inference/runner.py
+    -> consolidated inference JSONL
+    -> evaluation/run_all_eval.py
+    -> recognition and cognition scores
+```
+
+## Citation
+
+If this code contributes to your research, please cite:
+
+```bibtex
+@misc{valentini2026gazeaugmented,
+  title  = {Impact of Architecture and Integration Strategy on Gaze-Augmented Visual Reasoning in VLMs},
+  author = {Valentini, Dario and Moro, Matteo and Murino, Vittorio and Schiatti, Lucia},
+  year   = {2026}
+}
+```
+
+The citation will be updated when a public paper record is available.
+
+## Acknowledgements
+
+This project builds on CogBench and the LLaVA model family. Please follow the original projects' licenses, data-use conditions, and citation requirements.
+
+## License
+
+A software license has not yet been added. Until a license is selected, making the source public does not grant permission to reuse, modify, or redistribute it. Add the intended license before announcing the public release.
