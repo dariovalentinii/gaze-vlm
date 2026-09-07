@@ -39,7 +39,7 @@ pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 ```
 
-The cognition evaluation uses Gemini 2.5 Flash. Provide the API key through the environment rather than source code:
+The cognition evaluation uses Gemini 2.5 Flash. Provide the API key through the environment:
 
 ```bash
 export GEMINI_API_KEY="..."
