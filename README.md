@@ -1,4 +1,4 @@
-# Gaze-VLM
+# Impact of Architecture and Integration Strategy on Gaze-Augmented Visual Reasoning in VLMs
 
 Code accompanying the paper **“Impact of Architecture and Integration Strategy on Gaze-Augmented Visual Reasoning in VLMs”** by Dario Valentini, Matteo Moro, Vittorio Murino, and Lucia Schiatti.
 
