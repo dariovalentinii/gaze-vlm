@@ -49,8 +49,6 @@ Each family-specific trainer defaults to its 7B backbone. Pass `--model` explici
 | DE | LLaVA-NeXT 13B | `llava-hf/llava-v1.6-vicuna-13b-hf` | `training/dual_encoding/train_llava_next.py` |
 | DE | LLaVA-OneVision 7B Chat | `llava-hf/llava-onevision-qwen2-7b-ov-chat-hf` | `training/dual_encoding/train_llava_onevision.py` |
 
-For LGG with LLaVA-NeXT, `training/lgg/train_llava_next.py` is the primary trainer. `training/lgg/train_llava_next_with_hooks.py` retains an alternative last-layer attention-hook implementation and should only be selected when that specific implementation is required.
-
 The shared LGG LLaVA 1.5 trainer supports both `--attn_last_layers` and the optional `--attn_layer_start`/`--attn_layer_end` slice. The shared DE LLaVA-NeXT trainer writes periodic `step_<update>` checkpoints according to `--save_every` for both model sizes.
 
 ## Training commands
@@ -154,7 +152,6 @@ The entry points import shared helpers; these modules are not run directly.
 | `training/attention_alignment.py` | LLaVA-NeXT-style attention capture used by LGG NeXT and DE NeXT/OneVision. |
 | `training/attention_positions.py` | Shared image-token position inference. |
 | `training/lgg/common.py` | LGG gaze targets, distillation, freezing, and heatmap preprocessing. |
-| `training/lgg/attention_capture.py` | Last-layer capture for the alternative LGG hook trainer. |
 | `training/lgg/llava15_attention.py` | LLaVA 1.5 attention helpers. |
 | `training/lgg/attention_onevision.py` | OneVision-specific attention and RoPE handling. |
 | `training/dual_encoding/encoder.py` | Heatmap encoder setup, preprocessing, and vision LoRA selection. |
