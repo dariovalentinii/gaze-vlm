@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from training.common import Batch, resolve_prompt
+from training.data import Batch, resolve_prompt
 
 
 def has_chat_template(processor: Any) -> bool:

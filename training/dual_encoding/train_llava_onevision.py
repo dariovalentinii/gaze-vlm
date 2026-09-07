@@ -60,18 +60,20 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from training.common import JsonlGazePromptOnly, set_tokenizer_padding
+from training.data import JsonlGazePromptOnly, set_tokenizer_padding
 from training.prompting_onevision import collate_fn
-from training.dual_encoding.common import (
+from training.dual_encoding.encoder import (
     _heatmap_to_rgb_pil,
     heatmaps_to_rgb_pils,
     forward_heatmap_encoder,
     freeze_all_params,
     clone_vision_tower,
     restrict_vision_lora_to_last_k_layers,
+    heatmaps_to_pixel_values_for_encoder,
+)
+from training.dual_encoding.objectives import (
     distill_kl_loss,
     heatmaps_to_weights_for_attention,
-    heatmaps_to_pixel_values_for_encoder,
     build_per_sample_gaze_targets,
 )
 from training.modeling import select_model_and_adapter_classes
@@ -88,7 +90,7 @@ from training.attention_alignment import (
 )
 from src.data.heatmaps import heatmap_to_patch_weights, DualEncodingGazeInjector, pack_gaze_probs_like_llava_next
 from src.data.prompts import PROMPTS_FT
-from src.models.utils import unwrap_to_llava
+from src.models.unwrapping import unwrap_to_llava
 from src.models.llava_15 import LlavaHFAdapter
 from src.models.llava_next import LlavaNextHFAdapter
 from src.models.llava_onevision import LlavaOnevisionHFAdapter

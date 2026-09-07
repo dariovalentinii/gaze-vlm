@@ -46,17 +46,17 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from training.common import JsonlGazePromptOnly, set_tokenizer_padding
+from training.data import JsonlGazePromptOnly, set_tokenizer_padding
 from training.prompting_llava import collate_fn
-from training.dual_encoding.common import (
+from training.dual_encoding.encoder import (
     _heatmap_to_rgb_pil,
     heatmaps_to_rgb_pils,
     forward_heatmap_encoder,
     freeze_all_params,
     clone_vision_tower,
     restrict_vision_lora_to_last_k_layers,
-    distill_kl_loss,
 )
+from training.dual_encoding.objectives import distill_kl_loss
 from training.dual_encoding.attention_llava15 import (
     _find_longest_run_positions,
     attention_alignment_loss,
@@ -64,7 +64,7 @@ from training.dual_encoding.attention_llava15 import (
 )
 from src.data.heatmaps import heatmap_to_patch_weights, DualEncodingGazeInjector
 from src.data.prompts import PROMPTS_FT
-from src.models.utils import unwrap_to_llava
+from src.models.unwrapping import unwrap_to_llava
 
 
 # -----------------------

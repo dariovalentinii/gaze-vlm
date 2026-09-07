@@ -21,7 +21,7 @@ except Exception:
     except Exception:
         _apply_rotary_pos_emb = None
 
-from training.attention_utils import _find_longest_run_positions
+from training.attention_positions import _find_longest_run_positions
 
 
 def infer_image_token_positions_per_sample(

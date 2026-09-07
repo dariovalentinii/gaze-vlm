@@ -23,12 +23,22 @@ The shared helpers in `training/` are imported by these entry points and are not
 | Module | Used for |
 | --- | --- |
 | `training/attention_alignment.py` | Shared LLaVA-NeXT-style attention capture used by LGG NeXT and DE NeXT/OneVision |
-| `training/attention_utils.py` | Generic token-position and attention-capture helpers |
+| `training/attention_positions.py` | Shared image-token position helper |
+| `training/lgg/attention_capture.py` | Last-layer attention capture used by the LGG NeXT hook variant |
 | `training/lgg/llava15_attention.py` | LGG LLaVA 1.5 and hook-variant attention helpers |
 | `training/lgg/attention_onevision.py` | LGG OneVision-specific attention and RoPE handling |
 | `training/dual_encoding/attention_llava15.py` | DE LLaVA 1.5-specific attention alignment |
 
 The family-specific implementations remain separate even when some functions look similar, because their module-level dependencies and token-layout assumptions can differ.
+
+## Other shared modules
+
+| Module | Contents |
+| --- | --- |
+| `training/data.py` | Training dataset, batch structure, prompt resolution, and tokenizer padding |
+| `src/models/unwrapping.py` | Access to the underlying LLaVA model through optional wrappers |
+| `training/dual_encoding/encoder.py` | Heatmap encoder setup and preprocessing |
+| `training/dual_encoding/objectives.py` | Dual Encoding distillation loss and gaze targets |
 
 ## Input data
 

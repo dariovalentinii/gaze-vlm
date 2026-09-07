@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from training.attention_utils import _find_longest_run_positions
+from training.attention_positions import _find_longest_run_positions
 
 try:
     # Used to match the model's RoPE behavior

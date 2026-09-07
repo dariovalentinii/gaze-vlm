@@ -9,7 +9,7 @@ import numpy as np
 
 from transformers import AutoProcessor, LlavaForConditionalGeneration
 from peft import PeftModel
-from src.models.utils import unwrap_to_llava
+from src.models.unwrapping import unwrap_to_llava
 from src.data.heatmaps import (
     heatmaps_to_rgb_pils,
     heatmap_to_patch_weights,

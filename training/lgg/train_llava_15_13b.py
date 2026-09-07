@@ -63,7 +63,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from training.common import JsonlGazePromptOnly, set_tokenizer_padding
+from training.data import JsonlGazePromptOnly, set_tokenizer_padding
 from training.prompting_llava import collate_fn
 from training.modeling import select_model_and_adapter_classes
 from training.lgg.llava15_attention import (
@@ -79,7 +79,7 @@ from training.lgg.common import (
 )
 from src.data.heatmaps import apply_patch_weighting, GazeInjector
 from src.data.prompts import PROMPTS_FT
-from src.models.utils import unwrap_to_llava
+from src.models.unwrapping import unwrap_to_llava
 from src.models.llava_15 import LlavaHFAdapter
 from src.models.llava_next import LlavaNextHFAdapter
 from src.models.llava_onevision import LlavaOnevisionHFAdapter

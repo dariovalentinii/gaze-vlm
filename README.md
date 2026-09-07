@@ -48,16 +48,17 @@ training/lgg/ or training/dual_encoding/
 ├── run_batch_inference.py       # baseline, LGG, and DE inference
 ├── src/
 │   ├── data/                    # prompts and heatmap processing
-│   ├── models/                  # existing LLaVA adapters
+│   ├── models/                  # LLaVA adapters and model unwrapping
 │   └── inference/
 │       ├── data.py              # inference entries, dataset, and batching
 │       ├── results.py           # JSONL consolidation
 │       └── runner.py            # shared inference protocol and runner
 ├── training/
-│   ├── lgg/                     # LGG trainers and model-specific attention
-│   ├── dual_encoding/           # DE trainers and model-specific attention
+│   ├── data.py                  # shared training dataset and input structures
+│   ├── lgg/                     # LGG trainers, attention, and capture helpers
+│   ├── dual_encoding/           # DE trainers, encoder, and objectives
 │   ├── attention_alignment.py   # shared LLaVA-NeXT-style attention logic
-│   ├── attention_utils.py       # generic attention capture helpers
+│   ├── attention_positions.py   # shared image-token position helper
 │   ├── modeling.py              # shared model/adapter selection
 │   ├── prompting_llava.py       # LLaVA 1.5/NeXT prompt formatting
 │   └── prompting_onevision.py   # OneVision prompt formatting
