@@ -48,7 +48,10 @@ training/lgg/ or training/dual_encoding/
 ├── run_batch_inference.py       # baseline, LGG, and DE inference
 ├── src/
 │   ├── data/                    # prompts and heatmap processing
-│   ├── models/                  # LLaVA adapters and model unwrapping
+│   ├── models/
+│   │   ├── llava_*.py           # model-family inference adapters
+│   │   ├── checkpoint_utils.py  # shared checkpoint loading helpers
+│   │   └── unwrapping.py        # access through optional model wrappers
 │   └── inference/
 │       ├── data.py              # inference entries, dataset, and batching
 │       ├── results.py           # JSONL consolidation

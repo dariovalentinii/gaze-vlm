@@ -2,7 +2,6 @@
 from __future__ import annotations
 from typing import Optional, Dict, Any
 from pathlib import Path
-import json
 
 import torch
 from PIL import Image
@@ -11,6 +10,14 @@ import numpy as np
 from transformers import AutoProcessor, LlavaNextForConditionalGeneration
 from peft import PeftModel
 from src.models.unwrapping import unwrap_to_llava
+from src.models.checkpoint_utils import (
+    clone_vision_tower,
+    find_encoder_block_for_hook,
+    read_injector_min_gate,
+    resolve_checkpoint_layout,
+    vision_layer_requires_hidden_states,
+    vision_layer_to_encoder_block_idx,
+)
 from src.data.heatmaps import (
     heatmaps_to_rgb_pils,
     heatmap_to_patch_weights,
@@ -95,7 +102,10 @@ class LlavaNextHFAdapter:
         self.checkpoint_dir: Optional[Path] = None
         projector_lora_dir: Optional[Path] = None
         if lora_dir:
-            projector_lora_dir, self.checkpoint_dir = self._resolve_lora_layout(Path(lora_dir))
+            projector_lora_dir, self.checkpoint_dir = resolve_checkpoint_layout(
+                Path(lora_dir),
+                adapter_label="LlavaNextHFAdapter",
+            )
             if projector_lora_dir is not None:
                 self.model = PeftModel.from_pretrained(self.model, str(projector_lora_dir)).to(self.device)
 
@@ -110,75 +120,12 @@ class LlavaNextHFAdapter:
 
         self.model.eval()
 
-
-    def _resolve_lora_layout(self, path: Path) -> tuple[Optional[Path], Optional[Path]]:
-        """
-        Returns:
-          (projector_lora_dir, checkpoint_root_dir)
-
-        Accepted inputs:
-          - LGG/DE run dir (contains projector_lora/ or lora_adapter/)
-          - LGG/DE projector dir itself (.../projector_lora)
-          - legacy LLM adapter directory (.../lora_adapter)
-          - LGG/DE run dir without projector LoRA (injector-only): no projector_lora/
-        """
-        if not path.exists():
-            raise FileNotFoundError(f"LoRA path not found: {path}")
-
-        if path.is_dir() and path.name == "projector_lora" and (path / "adapter_config.json").exists():
-            print(f"[LlavaNextHFAdapter] Loaded projector LoRA from: {path}")
-            return path, path.parent
-
-        if path.is_dir() and path.name == "lora_adapter" and (path / "adapter_config.json").exists():
-            print(f"[LlavaNextHFAdapter] Loaded lora_adapter from: {path}")
-            return path, path.parent
-
-        candidate = path / "projector_lora"
-        if candidate.exists() and (candidate / "adapter_config.json").exists():
-            print(f"[LlavaNextHFAdapter] Loaded projector LoRA from: {candidate}")
-            return candidate, path
-
-        # lora_adapter candidate (LLM [+ proj])
-        candidate = path / "lora_adapter"
-        if candidate.exists() and (candidate / "adapter_config.json").exists():
-            print(f"[LlavaNextHFAdapter] Loaded lora_adapter from: {candidate}")
-            return candidate, path
-
-        # Injector-only run dir (no projector LoRA or adapter)
-        print(f"[LlavaNextHFAdapter] No LoRA adapters found in: {path}. Checking for injector-only checkpoint...")
-        if path.is_dir() and ((path / "gaze_injector.pt").exists() or (path / "components.json").exists()):
-            return None, path
-
-        raise ValueError(
-            f"Unsupported checkpoint layout at: {path}. "
-            "Expected a run folder containing projector_lora/ or lora_adapter/ and/or gaze_injector.pt, "
-            "or a direct projector_lora/ or lora_adapter/ folder."
-        )
-
-
-    def _read_injector_min_gate(self, inj_dir: Path) -> float:
-        min_gate = 0.05
-
-        # LGG/DE sidecar
-        comp = inj_dir / "components.json"
-        if comp.exists():
-            try:
-                meta = json.loads(comp.read_text(encoding="utf-8"))
-                inj = meta.get("injector", {})
-                if isinstance(inj, dict) and "min_gate" in inj:
-                    return float(inj["min_gate"])
-            except Exception:
-                pass
-
-        return min_gate
-        
-        
     def _load_gaze_injector(self, inj_dir: Path) -> None:
         pt = inj_dir / "gaze_injector.pt"
         if not pt.exists():
             return
 
-        min_gate = self._read_injector_min_gate(inj_dir)
+        min_gate = read_injector_min_gate(inj_dir)
         sd = torch.load(pt, map_location="cpu")
 
         # Dual Encoding injector state has projection/norm params and works on [B,N,D].
@@ -198,42 +145,6 @@ class LlavaNextHFAdapter:
         self.dual_encoding_injector = None
         print(f"[LlavaNextHFAdapter] Loaded gaze injector from: {pt}")
 
-
-    def _clone_vision_tower(self, vision_tower) -> Any:
-        cls = vision_tower.__class__
-        cloned = cls(vision_tower.config)
-        cloned.load_state_dict(vision_tower.state_dict(), strict=True)
-        return cloned
-
-
-    def _vision_layer_to_encoder_block_idx(self, layer_idx: Optional[int], n_layers: int) -> Optional[int]:
-        if layer_idx is None or n_layers <= 0:
-            return None
-        hs_len = n_layers + 1
-        hs_idx = layer_idx if layer_idx >= 0 else (hs_len + layer_idx)
-        if hs_idx <= 0 or hs_idx > n_layers:
-            return None
-        return hs_idx - 1
-
-
-    def _find_encoder_block_for_hook(self, module_root: Any, block_idx: int) -> Optional[Any]:
-        suffix = f"vision_model.encoder.layers.{block_idx}"
-        for name, mod in module_root.named_modules():
-            if name.endswith(suffix):
-                return mod
-        return None
-
-
-    def _vision_layer_requires_hidden_states(self, layer_idx: Optional[int], n_layers: int) -> bool:
-        if layer_idx is None:
-            return False
-        if layer_idx == -1:
-            return False
-        if n_layers > 0 and layer_idx == n_layers:
-            return False
-        return True
-
-
     def _load_heatmap_encoder(self, ckpt_dir: Path) -> None:
         hm_lora_dir = ckpt_dir / "heatmap_encoder_lora"
         if not hm_lora_dir.exists():
@@ -241,7 +152,7 @@ class LlavaNextHFAdapter:
 
         core = unwrap_to_llava(self.model)
         img_vision = core.model.vision_tower
-        heatmap_encoder_base = self._clone_vision_tower(img_vision).to(self.device)
+        heatmap_encoder_base = clone_vision_tower(img_vision).to(self.device)
         self.heatmap_encoder = PeftModel.from_pretrained(heatmap_encoder_base, str(hm_lora_dir)).to(self.device)
         self.heatmap_encoder.eval()
 
@@ -249,9 +160,9 @@ class LlavaNextHFAdapter:
         # via hook to avoid requesting full hidden_states.
         vision_layer = getattr(self.model.config, "vision_feature_layer", None)
         num_vision_layers = int(getattr(self.model.config.vision_config, "num_hidden_layers", 0) or 0)
-        hm_block_idx = self._vision_layer_to_encoder_block_idx(vision_layer, num_vision_layers)
+        hm_block_idx = vision_layer_to_encoder_block_idx(vision_layer, num_vision_layers)
         if hm_block_idx is not None:
-            hm_block = self._find_encoder_block_for_hook(self.heatmap_encoder, hm_block_idx)
+            hm_block = find_encoder_block_for_hook(self.heatmap_encoder, hm_block_idx)
             if hm_block is not None:
                 def _heatmap_block_hook(_module, _inp, out):
                     self._heatmap_layer_out = out[0] if isinstance(out, (tuple, list)) else out
@@ -307,7 +218,7 @@ class LlavaNextHFAdapter:
 
         vision_layer = getattr(self.model.config, "vision_feature_layer", None)
         num_layers = int(getattr(self.model.config.vision_config, "num_hidden_layers", 0) or 0)
-        need_hidden_states = self._vision_layer_requires_hidden_states(vision_layer, num_layers) and self._heatmap_hook_handle is None
+        need_hidden_states = vision_layer_requires_hidden_states(vision_layer, num_layers) and self._heatmap_hook_handle is None
 
         self._heatmap_layer_out = None
         hm_out = self._forward_heatmap_encoder(
